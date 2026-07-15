@@ -103,6 +103,19 @@ public sealed class IntegrationTestServer : IAsyncDisposable
 
         app.MapMethods("/json", ["GET", "HEAD"], () => Results.Json(new { hello = "world" }));
 
+        // JSON-extension test endpoints.
+        app.MapMethods("/json-doc", ["GET", "DELETE"],
+            () => Results.Json(new { name = "curl", value = 42 }));
+        app.MapMethods("/json-echo", ["POST", "PUT", "PATCH"], async (HttpContext context) =>
+        {
+            using var reader = new StreamReader(context.Request.Body);
+            string body = await reader.ReadToEndAsync(context.RequestAborted);
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(body, context.RequestAborted);
+        });
+        app.MapGet("/json-array", () => Results.Json(
+            Enumerable.Range(1, 5).Select(i => new { name = $"item{i}", value = i })));
+
         app.MapGet("/slow-body", async (HttpContext context, int chunks, int delayMs) =>
         {
             context.Response.ContentType = "application/octet-stream";
@@ -136,7 +149,7 @@ public sealed class IntegrationTestServer : IAsyncDisposable
             }
         });
 
-        app.MapPost("/upload", async (HttpContext context) =>
+        app.MapMethods("/upload", ["POST", "PUT", "PATCH", "PROPFIND", "REPORT"], async (HttpContext context) =>
         {
             byte[] buffer = new byte[81920];
             long total = 0;

@@ -17,4 +17,8 @@
     <ProjectReference Include="..\..\src\CurlHttpClient\CurlHttpClient.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="ApiCoverage\httpclient-api-baseline.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -1,0 +1,506 @@
+{
+  "$comment": "Committed HttpClient API-coverage baseline. Regenerate deliberately when global.json bumps the SDK. Categories: Direct (an [ApiCoverage]-tagged executable test invokes this exact API), CoveredVia (same implementation as a directly-tested overload), NotApplicable (justified).",
+  "sdk": "10.0.302",
+  "apis": [
+    {
+      "signature": "HttpClient.BaseAddress { get; set; }",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.CancelPendingRequests()",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.DefaultRequestHeaders { get; }",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.DefaultRequestVersion { get; set; }",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.DefaultVersionPolicy { get; set; }",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.DeleteAsync(String)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.DeleteAsync(String, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.DeleteAsync(Uri)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.DeleteAsync(Uri, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.Dispose()",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetAsync(String)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetAsync(String, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetAsync(String, HttpCompletionOption)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetAsync(String, HttpCompletionOption, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetAsync(Uri)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetAsync(Uri, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetAsync(Uri, HttpCompletionOption)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetAsync(Uri, HttpCompletionOption, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetByteArrayAsync(String)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetByteArrayAsync(String, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetByteArrayAsync(Uri)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetByteArrayAsync(Uri, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetStreamAsync(String)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetStreamAsync(String, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetStreamAsync(Uri)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetStreamAsync(Uri, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetStringAsync(String)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetStringAsync(String, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetStringAsync(Uri)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.GetStringAsync(Uri, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.MaxResponseContentBufferSize { get; set; }",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PatchAsync(String, HttpContent)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PatchAsync(String, HttpContent, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PatchAsync(Uri, HttpContent)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PatchAsync(Uri, HttpContent, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PostAsync(String, HttpContent)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PostAsync(String, HttpContent, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PostAsync(Uri, HttpContent)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PostAsync(Uri, HttpContent, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PutAsync(String, HttpContent)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PutAsync(String, HttpContent, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PutAsync(Uri, HttpContent)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.PutAsync(Uri, HttpContent, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.Send(HttpRequestMessage)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.Send(HttpRequestMessage, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.Send(HttpRequestMessage, HttpCompletionOption)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.Send(HttpRequestMessage, HttpCompletionOption, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.SendAsync(HttpRequestMessage)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.SendAsync(HttpRequestMessage, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.SendAsync(HttpRequestMessage, HttpCompletionOption)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.SendAsync(HttpRequestMessage, HttpCompletionOption, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClient.Timeout { get; set; }",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync(HttpClient, String, Type, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync(HttpClient, String, Type, JsonSerializerContext, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync(HttpClient, String, Type, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync(HttpClient, Uri, Type, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync(HttpClient, Uri, Type, JsonSerializerContext, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync(HttpClient, Uri, Type, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync<T>(HttpClient, String, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync<T>(HttpClient, String, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync<T>(HttpClient, String, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync<T>(HttpClient, Uri, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync<T>(HttpClient, Uri, JsonSerializerOptions, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.DeleteFromJsonAsync<T>(HttpClient, Uri, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsAsyncEnumerable<T>(HttpClient, String, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsAsyncEnumerable<T>(HttpClient, String, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsAsyncEnumerable<T>(HttpClient, String, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsAsyncEnumerable<T>(HttpClient, Uri, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsAsyncEnumerable<T>(HttpClient, Uri, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsAsyncEnumerable<T>(HttpClient, Uri, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync(HttpClient, String, Type, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync(HttpClient, String, Type, JsonSerializerContext, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync(HttpClient, String, Type, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync(HttpClient, Uri, Type, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync(HttpClient, Uri, Type, JsonSerializerContext, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync(HttpClient, Uri, Type, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync<T>(HttpClient, String, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync<T>(HttpClient, String, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync<T>(HttpClient, String, JsonTypeInfo<T>, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync<T>(HttpClient, Uri, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync<T>(HttpClient, Uri, JsonSerializerOptions, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.GetFromJsonAsync<T>(HttpClient, Uri, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PatchAsJsonAsync<T>(HttpClient, String, T, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PatchAsJsonAsync<T>(HttpClient, String, T, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PatchAsJsonAsync<T>(HttpClient, String, T, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PatchAsJsonAsync<T>(HttpClient, Uri, T, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PatchAsJsonAsync<T>(HttpClient, Uri, T, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PatchAsJsonAsync<T>(HttpClient, Uri, T, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PostAsJsonAsync<T>(HttpClient, String, T, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PostAsJsonAsync<T>(HttpClient, String, T, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PostAsJsonAsync<T>(HttpClient, String, T, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PostAsJsonAsync<T>(HttpClient, Uri, T, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PostAsJsonAsync<T>(HttpClient, Uri, T, JsonSerializerOptions, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PostAsJsonAsync<T>(HttpClient, Uri, T, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PutAsJsonAsync<T>(HttpClient, String, T, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PutAsJsonAsync<T>(HttpClient, String, T, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PutAsJsonAsync<T>(HttpClient, String, T, JsonTypeInfo<T>, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PutAsJsonAsync<T>(HttpClient, Uri, T, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PutAsJsonAsync<T>(HttpClient, Uri, T, JsonSerializerOptions, CancellationToken)",
+      "category": "CoveredVia",
+      "note": "Thin serializer/URI-form plumbing over the same tested implementation; a representative overload of this method family is directly tested. Nothing below HttpClient differs between overloads."
+    },
+    {
+      "signature": "HttpClientJsonExtensions.PutAsJsonAsync<T>(HttpClient, Uri, T, JsonTypeInfo<T>, CancellationToken)",
+      "category": "Direct",
+      "note": ""
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using CurlHttp.IntegrationTests.ApiCoverage;
 using CurlHttp.IntegrationTests.Infrastructure;
 using Xunit;
 
@@ -15,6 +16,7 @@ public class SyncSendTests(ServerFixture fixture)
     private HttpClient Client => fixture.Client;
 
     [Fact]
+    [ApiCoverage("HttpClient.Send(HttpRequestMessage)")]
     public void Send_Request_Works()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, fixture.Http("/json"));
@@ -23,6 +25,7 @@ public class SyncSendTests(ServerFixture fixture)
     }
 
     [Fact]
+    [ApiCoverage("HttpClient.Send(HttpRequestMessage, CancellationToken)")]
     public void Send_WithCancellationToken_Works()
     {
         using var cts = new CancellationTokenSource();
@@ -32,6 +35,7 @@ public class SyncSendTests(ServerFixture fixture)
     }
 
     [Fact]
+    [ApiCoverage("HttpClient.Send(HttpRequestMessage, HttpCompletionOption)")]
     public void Send_WithCompletionOption_Works()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, fixture.Http("/json"));
@@ -40,6 +44,7 @@ public class SyncSendTests(ServerFixture fixture)
     }
 
     [Fact]
+    [ApiCoverage("HttpClient.Send(HttpRequestMessage, HttpCompletionOption, CancellationToken)")]
     public void Send_WithCompletionOptionAndToken_StreamsHeadersFirst()
     {
         using var request = new HttpRequestMessage(
