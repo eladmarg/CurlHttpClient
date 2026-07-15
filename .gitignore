@@ -1,0 +1,10 @@
+bin/
+obj/
+out/
+artifacts/
+TestResults/
+BenchmarkDotNet.Artifacts/
+*.user
+.vs/
+tools/vcpkg/
+native/vcpkg_installed/

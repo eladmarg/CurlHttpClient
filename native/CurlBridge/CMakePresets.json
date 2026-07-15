@@ -1,0 +1,37 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "x64-windows-static-v142",
+      "displayName": "x64 static, MSVC v142 (Windows Server 2012 R2 compatible)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static-v142",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/../triplets",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/../vcpkg_installed",
+        "VCPKG_MANIFEST_DIR": "${sourceDir}/.."
+      }
+    },
+    {
+      "name": "x64-windows-static-v142-debug",
+      "inherits": "x64-windows-static-v142",
+      "displayName": "x64 static v142 (Debug)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "x64-windows-static-v142",
+      "configurePreset": "x64-windows-static-v142"
+    },
+    {
+      "name": "x64-windows-static-v142-debug",
+      "configurePreset": "x64-windows-static-v142-debug"
+    }
+  ]
+}

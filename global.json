@@ -1,0 +1,7 @@
+{
+  "$comment": "Pins the SDK so the in-box HttpClient / System.Net.Http.Json API surface cannot drift underneath the committed API-coverage baseline (tests/CurlHttpClient.IntegrationTests/ApiCoverage). Bump deliberately and regenerate the baseline in the same change.",
+  "sdk": {
+    "version": "10.0.302",
+    "rollForward": "latestPatch"
+  }
+}

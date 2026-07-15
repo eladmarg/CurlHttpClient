@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>CurlHttp.ConsumerTests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The library under test, consumed EXACTLY like a real application:
+         as the packed NuGet package (from ..\..\artifacts via nuget.config),
+         so these tests also validate that curl_http_bridge.dll and cacert.pem
+         flow to the consumer output through the runtimes/ conventions. -->
+    <PackageReference Include="CurlHttpClient" Version="1.0.0" />
+
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.0" />
+  </ItemGroup>
+
+</Project>

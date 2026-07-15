@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "CurlHttpClient.IntegrationTests": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:49520;http://localhost:49522"
+    }
+  }
+}

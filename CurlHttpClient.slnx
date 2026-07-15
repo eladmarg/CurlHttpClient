@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/CurlHttpClient.Benchmarks/CurlHttpClient.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/CurlHttpClient.Sample/CurlHttpClient.Sample.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/CurlHttpClient.DependencyInjection/CurlHttpClient.DependencyInjection.csproj" />
+    <Project Path="src/CurlHttpClient/CurlHttpClient.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CurlHttpClient.IntegrationTests/CurlHttpClient.IntegrationTests.csproj" />
+    <Project Path="tests/CurlHttpClient.Tests/CurlHttpClient.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "CurlHttpClient.Benchmarks": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:49521;http://localhost:49523"
+    }
+  }
+}

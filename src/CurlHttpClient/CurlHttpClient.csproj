@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>CurlHttp</RootNamespace>
+    <AssemblyName>CurlHttpClient</AssemblyName>
+    <Description>HttpMessageHandler backed by a bundled libcurl + OpenSSL native bridge. Provides modern TLS (1.2/1.3) on hosts whose Schannel cannot, e.g. Windows Server 2012 R2.</Description>
+    <Version>1.0.0</Version>
+    <Authors>CustomHttpClient</Authors>
+    <PackageId>CurlHttpClient</PackageId>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>httpclient;libcurl;openssl;tls;httpmessagehandler</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <EnablePackageValidation>true</EnablePackageValidation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CurlHttpClient.Tests" />
+    <InternalsVisibleTo Include="CurlHttpClient.IntegrationTests" />
+  </ItemGroup>
+
+  <!-- Native assets: packaged under NuGet runtime conventions and copied to
+       the output for direct project references. -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\native\CurlBridge\out\build\x64-windows-static-v142\curl_http_bridge.dll"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\native\CurlBridge\out\build\x64-windows-static-v142\curl_http_bridge.dll')"
+          Pack="true"
+          PackagePath="runtimes/win-x64/native/"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="runtimes\win-x64\native\curl_http_bridge.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\native\cacert.pem"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\native\cacert.pem')"
+          Pack="true"
+          PackagePath="runtimes/win-x64/native/"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="runtimes\win-x64\native\cacert.pem" />
+  </ItemGroup>
+
+</Project>

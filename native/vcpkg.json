@@ -1,0 +1,18 @@
+{
+  "$comment": "IMPORTANT: default-features MUST stay false. The curl port's default 'ssl' feature resolves to Schannel (sspi) on Windows, which would silently defeat the entire purpose of this project (modern TLS via OpenSSL on Windows Server 2012 R2). 'sspi' below enables SSPI for NTLM/Negotiate proxy AUTH only - it does not affect the TLS backend. zlib is an unconditional dependency of the curl port (there is no 'zlib' feature).",
+  "name": "curl-http-bridge",
+  "version-string": "1.0.0",
+  "dependencies": [
+    {
+      "name": "curl",
+      "default-features": false,
+      "features": [
+        "openssl",
+        "http2",
+        "brotli",
+        "sspi"
+      ]
+    }
+  ],
+  "builtin-baseline": "cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3"
+}
