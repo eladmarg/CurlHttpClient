@@ -8,3 +8,4 @@ BenchmarkDotNet.Artifacts/
 .vs/
 tools/vcpkg/
 native/vcpkg_installed/
+consumer/packages/
