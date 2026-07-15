@@ -207,11 +207,12 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
 
         // libcurl adds "Expect: 100-continue" on its own for sizable uploads
         // and waits up to a second for the interim response; SocketsHttpHandler
-        // does not. Suppress unless the caller opted in.
-        if (request.Headers.ExpectContinue != true)
-        {
-            lines.Add("Expect:");
-        }
+        // does not. Policy: explicit opt-in via ExpectContinue==true always
+        // sends the header (regardless of body size); anything else suppresses
+        // libcurl's automatic behavior.
+        lines.Add(request.Headers.ExpectContinue == true
+            ? "Expect: 100-continue"
+            : "Expect:");
         return lines;
     }
 

@@ -166,8 +166,110 @@ public sealed class IntegrationTestServer : IAsyncDisposable
             });
         });
 
+        // Byte-accurate request inspection: what the server ACTUALLY received.
+        app.Map("/inspect", async (HttpContext context) =>
+        {
+            using var sha = System.Security.Cryptography.IncrementalHash.CreateHash(
+                System.Security.Cryptography.HashAlgorithmName.SHA256);
+            byte[] buffer = new byte[81920];
+            long length = 0;
+            int read;
+            while ((read = await context.Request.Body.ReadAsync(buffer, context.RequestAborted)) > 0)
+            {
+                sha.AppendData(buffer, 0, read);
+                length += read;
+            }
+            return Results.Json(new
+            {
+                method = context.Request.Method,
+                declaredContentLength = context.Request.ContentLength,
+                transferEncoding = context.Request.Headers.TransferEncoding.ToString(),
+                contentType = context.Request.ContentType,
+                bodyLength = length,
+                bodySha256 = Convert.ToHexString(sha.GetHashAndReset()),
+                headers = context.Request.Headers.ToDictionary(
+                    h => h.Key, h => h.Value.ToString(), StringComparer.OrdinalIgnoreCase),
+            });
+        });
+
+        // Multipart/form parsing: proves boundaries and parts survive intact.
+        app.MapPost("/inspect-form", async (HttpContext context) =>
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted);
+            var files = new List<object>();
+            foreach (var file in form.Files)
+            {
+                await using Stream stream = file.OpenReadStream();
+                using var sha = System.Security.Cryptography.IncrementalHash.CreateHash(
+                    System.Security.Cryptography.HashAlgorithmName.SHA256);
+                byte[] buffer = new byte[81920];
+                long length = 0;
+                int read;
+                while ((read = await stream.ReadAsync(buffer, context.RequestAborted)) > 0)
+                {
+                    sha.AppendData(buffer, 0, read);
+                    length += read;
+                }
+                files.Add(new
+                {
+                    name = file.Name,
+                    fileName = file.FileName,
+                    contentType = file.ContentType,
+                    length,
+                    sha256 = Convert.ToHexString(sha.GetHashAndReset()),
+                });
+            }
+            return Results.Json(new
+            {
+                fields = form.ToDictionary(f => f.Key, f => f.Value.ToString()),
+                files,
+            });
+        });
+
+        // Upload-buffering detector: reports when the FIRST body byte arrived
+        // relative to request start vs when the body completed. A handler
+        // that buffers the whole upload before transmitting shows
+        // firstByteMs ≈ totalMs; a streaming handler shows firstByteMs ≪ totalMs.
+        app.MapPost("/upload-probe", async (HttpContext context) =>
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            byte[] buffer = new byte[81920];
+            long total = 0;
+            long firstByteMs = -1;
+            int read;
+            while ((read = await context.Request.Body.ReadAsync(buffer, context.RequestAborted)) > 0)
+            {
+                if (firstByteMs < 0)
+                {
+                    firstByteMs = stopwatch.ElapsedMilliseconds;
+                }
+                total += read;
+            }
+            return Results.Json(new
+            {
+                firstByteMs,
+                totalMs = stopwatch.ElapsedMilliseconds,
+                bytes = total,
+            });
+        });
+
+        app.Map("/redirect-custom", async (HttpContext context) =>
+        {
+            // Drain any request body first (Kestrel dislikes responses that
+            // abandon unread bodies within keep-alive connections).
+            byte[] drainBuffer = new byte[81920];
+            while (await context.Request.Body.ReadAsync(drainBuffer, context.RequestAborted) > 0)
+            {
+            }
+            context.Response.StatusCode = int.Parse(context.Request.Query["status"]!);
+            context.Response.Headers.Location = context.Request.Query["to"].ToString();
+            await context.Response.WriteAsync("redirecting", context.RequestAborted);
+        });
+
         app.MapGet("/redirect/{n:int}", (int n) =>
             Results.Redirect(n > 0 ? $"/redirect/{n - 1}" : "/json", permanent: false));
+
+        app.MapGet("/redirect-loop", () => Results.Redirect("/redirect-loop", permanent: false));
 
         app.MapPost("/redirect-post", () => Results.Redirect("/echo-method", permanent: false));
 
