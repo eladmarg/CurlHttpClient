@@ -11,12 +11,15 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 find_package(CURL CONFIG REQUIRED)
 
+find_package(OpenSSL REQUIRED)
+
 add_library(curl_http_bridge SHARED
     src/bridge_global.cpp
     src/bridge_client.cpp
     src/bridge_request.cpp
     src/bridge_callbacks.cpp
     src/bridge_error.cpp
+    src/bridge_ciphers.cpp
 )
 
 target_include_directories(curl_http_bridge
@@ -38,7 +41,9 @@ if(MSVC)
     target_link_options(curl_http_bridge PRIVATE /guard:cf)
 endif()
 
-target_link_libraries(curl_http_bridge PRIVATE CURL::libcurl)
+# OpenSSL is the same static archive libcurl links; the direct dependency is
+# for the cipher-inventory export (bridge_ciphers.cpp).
+target_link_libraries(curl_http_bridge PRIVATE CURL::libcurl OpenSSL::SSL OpenSSL::Crypto)
 
 # Stage-0 spike: asserts the linked libcurl has the OpenSSL backend and the
 # features this project depends on. Run on the build machine and as part of
@@ -48,4 +53,12 @@ target_link_libraries(curl_bridge_spike PRIVATE curl_http_bridge)
 target_include_directories(curl_bridge_spike PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 if(MSVC)
     target_compile_options(curl_bridge_spike PRIVATE /W4 /EHsc)
+endif()
+
+# Native ABI contract tests (run by build scripts / CI; exit 0 = pass).
+add_executable(curl_bridge_abi_test src/abi_test_main.cpp)
+target_link_libraries(curl_bridge_abi_test PRIVATE curl_http_bridge)
+target_include_directories(curl_bridge_abi_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(MSVC)
+    target_compile_options(curl_bridge_abi_test PRIVATE /W4 /EHsc)
 endif()

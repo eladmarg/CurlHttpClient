@@ -225,6 +225,22 @@ curl_bridge_global_initialize(void);
 CURL_BRIDGE_API size_t CURL_BRIDGE_CALL
 curl_bridge_get_version_info(char* buffer, size_t buffer_length);
 
+/* Enumerates every TLS cipher suite the STATICALLY LINKED OpenSSL build can
+ * offer for client use, evaluated at security level 0 with
+ * "ALL:COMPLEMENTOFALL" plus all five TLS 1.3 suites — i.e. the complete
+ * client-offerable inventory of this exact binary. PSK/SRP suites are
+ * filtered by OpenSSL itself (not client-offerable without PSK/SRP state);
+ * RC4/3DES are compiled out (OPENSSL_NO_WEAK_SSL_CIPHERS).
+ *
+ * JSON shape:
+ * {"openssl_version":"...","openssl_version_hex":"0x...",
+ *  "ciphers":[{"name":..,"standard_name":..,"protocol":..,"kx":..,
+ *              "auth":..,"bits":N,"aead":bool,"enabled_default":bool}]}
+ *
+ * Buffer contract identical to curl_bridge_get_version_info. */
+CURL_BRIDGE_API size_t CURL_BRIDGE_CALL
+curl_bridge_enumerate_ciphers(char* buffer, size_t buffer_length);
+
 /* ------------------------------------------------------------------ */
 /* Client                                                              */
 /* ------------------------------------------------------------------ */

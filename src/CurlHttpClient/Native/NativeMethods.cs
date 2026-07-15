@@ -26,6 +26,10 @@ internal static partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
     internal static partial IntPtr GetLastGlobalErrorPtr();
 
+    [LibraryImport(LibraryName, EntryPoint = "curl_bridge_enumerate_ciphers")]
+    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    internal static partial nuint EnumerateCiphers(Span<byte> buffer, nuint bufferLength);
+
     [LibraryImport(LibraryName, EntryPoint = "curl_bridge_client_create")]
     [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
     internal static partial CurlBridgeClientHandle ClientCreate(in BridgeClientOptionsNative options);
@@ -108,20 +112,27 @@ internal static partial class NativeMethods
     internal static string RequestGetEffectiveUrl(CurlBridgeRequestHandle request)
         => Marshal.PtrToStringUTF8(RequestGetEffectiveUrlPtr(request)) ?? string.Empty;
 
+    private delegate nuint JsonExport(Span<byte> buffer, nuint bufferLength);
+
     internal static string GetVersionInfoJson()
+        => ReadJson(GetVersionInfo, 4096);
+
+    internal static string GetCipherInventoryJson()
+        => ReadJson(EnumerateCiphers, 64 * 1024);
+
+    private static string ReadJson(JsonExport nativeCall, int initialSize)
     {
-        Span<byte> buffer = stackalloc byte[4096];
-        nuint written = GetVersionInfo(buffer, (nuint)buffer.Length);
+        byte[] buffer = new byte[initialSize];
+        nuint written = nativeCall(buffer, (nuint)buffer.Length);
         if (written == 0)
         {
             return "{}";
         }
         if (written >= (nuint)buffer.Length)
         {
-            byte[] large = new byte[(int)written + 1];
-            written = GetVersionInfo(large, (nuint)large.Length);
-            return System.Text.Encoding.UTF8.GetString(large, 0, (int)written);
+            buffer = new byte[(int)written + 1];
+            written = nativeCall(buffer, (nuint)buffer.Length);
         }
-        return System.Text.Encoding.UTF8.GetString(buffer[..(int)written]);
+        return System.Text.Encoding.UTF8.GetString(buffer, 0, (int)written);
     }
 }
