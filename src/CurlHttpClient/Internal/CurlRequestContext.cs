@@ -45,13 +45,15 @@ internal sealed class CurlRequestContext : IDisposable
         HttpRequestMessage request,
         CurlHttpClientOptions options,
         CancellationToken callerToken,
-        CurlHttpEventSourceScope events)
+        CurlHttpEventSourceScope events,
+        bool proxyAuthRetryPossible = false)
     {
         _request = request;
         _options = options;
         CallerToken = callerToken;
         _events = events;
-        _parser = new ResponseHeaderParser(request.RequestUri!, options.AllowAutoRedirect);
+        _parser = new ResponseHeaderParser(request.RequestUri!, options.AllowAutoRedirect,
+            proxyAuthRetryPossible);
         BodyQueue = new BoundedByteQueue(options.MaxResponseBufferBytes);
     }
 

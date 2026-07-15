@@ -31,6 +31,7 @@ namespace CurlHttp.Internal;
 internal sealed class ResponseHeaderParser
 {
     private readonly bool _followRedirects;
+    private readonly bool _proxyAuthRetryPossible;
     private readonly List<(string Name, string Value)> _headers = [];
     private readonly List<(string Name, string Value)> _trailers = [];
 
@@ -42,10 +43,12 @@ internal sealed class ResponseHeaderParser
 
     private Uri _currentUri;
 
-    public ResponseHeaderParser(Uri requestUri, bool followRedirects)
+    public ResponseHeaderParser(Uri requestUri, bool followRedirects,
+        bool proxyAuthRetryPossible = false)
     {
         _currentUri = requestUri;
         _followRedirects = followRedirects;
+        _proxyAuthRetryPossible = proxyAuthRetryPossible;
     }
 
     /// <summary>Set when a completed block is known to be the final response.
@@ -109,6 +112,16 @@ internal sealed class ResponseHeaderParser
             if ((flags & HeaderLineFlags.Informational) != 0 || _statusCode is >= 100 and < 200)
             {
                 _headers.Clear();
+                return false;
+            }
+
+            if (_statusCode == 407 && _proxyAuthRetryPossible)
+            {
+                // Proxy credentials are configured: libcurl may retry this
+                // request with Proxy-Authorization, making this block an
+                // intermediate hop. Park it; the next status line discards
+                // it, transfer completion promotes it (final 407).
+                HasFinalBlock = true;
                 return false;
             }
 

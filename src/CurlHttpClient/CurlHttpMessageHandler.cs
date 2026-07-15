@@ -136,13 +136,16 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
         cancellationToken.ThrowIfCancellationRequested();
 
         var scope = new CurlHttpEventSourceScope(_logger, request, _options.RedactQueryStringsInLogs);
-        var context = new CurlRequestContext(request, _options, cancellationToken, scope);
+        (string proxy, string? proxyUserPassword) = ResolveProxy(uri);
+        // With proxy credentials configured, a 407 header block may be an
+        // intermediate hop (libcurl retries with Proxy-Authorization); the
+        // parser must not finalize it eagerly.
+        var context = new CurlRequestContext(request, _options, cancellationToken, scope,
+            proxyAuthRetryPossible: proxyUserPassword is not null);
         bool dispatched = false;
         try
         {
             await context.PrepareRequestBodyAsync(cancellationToken).ConfigureAwait(false);
-
-            (string proxy, string? proxyUserPassword) = ResolveProxy(uri);
             var plan = new NativeRequestPlan(
                 Method: request.Method.Method,
                 Url: uri.AbsoluteUri,
