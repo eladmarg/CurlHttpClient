@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # weekly full cipher/stress sweep (Mondays 03:00 UTC)
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+  VCPKG_BASELINE: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+
+jobs:
+  # ---------------------------------------------------------------
+  # Build the self-contained native bridge (libcurl + OpenSSL, static).
+  # ---------------------------------------------------------------
+  build-native:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MSVC v142 toolset (WS2012R2-compatible)
+        shell: pwsh
+        run: |
+          # windows-2022 ships VS2022; add the v142 toolset + Win 8.1-floor SDK.
+          $vsInstaller = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe"
+          $args = @("modify","--quiet","--norestart","--installPath",
+            "C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
+            "--add","Microsoft.VisualStudio.Component.VC.v142.x86.x64")
+          Start-Process -FilePath $vsInstaller -ArgumentList $args -Wait
+
+      - name: Cache vcpkg binary artifacts
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ env.VCPKG_BASELINE }}-${{ hashFiles('native/vcpkg.json') }}
+
+      - name: Build native bridge
+        shell: cmd
+        run: build\build-native-x64.cmd
+
+      - name: Native ABI contract tests
+        shell: cmd
+        run: native\CurlBridge\out\build\x64-windows-static-v142\curl_bridge_abi_test.exe
+
+      - name: WS2012R2 import gate
+        shell: pwsh
+        run: build/check-imports.ps1 -DllPath native/CurlBridge/out/build/x64-windows-static-v142/curl_http_bridge.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-bridge
+          path: native/CurlBridge/out/build/x64-windows-static-v142/curl_http_bridge.dll
+
+  # ---------------------------------------------------------------
+  # Managed unit tests (fast).
+  # ---------------------------------------------------------------
+  unit-tests:
+    needs: build-native
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-bridge
+          path: native/CurlBridge/out/build/x64-windows-static-v142/
+      - run: dotnet test tests/CurlHttpClient.Tests -c Release --logger "trx;LogFileName=unit.trx" --results-directory artifacts/test-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-results
+          path: artifacts/test-results
+
+  # ---------------------------------------------------------------
+  # Integration + TLS + cipher (fast subset) + coverage gate (enforcing).
+  # ---------------------------------------------------------------
+  integration-tests:
+    needs: build-native
+    runs-on: windows-2022
+    env:
+      CURLHTTP_ENFORCE_COVERAGE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-bridge
+          path: native/CurlBridge/out/build/x64-windows-static-v142/
+      - name: Integration + TLS + fast cipher suites
+        run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --logger "trx;LogFileName=integration.trx" --results-directory artifacts/test-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-artifacts
+          path: artifacts
+
+  # ---------------------------------------------------------------
+  # Full cipher matrix + stress/soak/memory (weekly or manual).
+  # ---------------------------------------------------------------
+  cipher-and-stress:
+    needs: build-native
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    env:
+      CURLHTTP_STRESS: "1"
+      CURLHTTP_STRESS_MB: "100"
+      CURLHTTP_SOAK_SECONDS: "60"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-bridge
+          path: native/CurlBridge/out/build/x64-windows-static-v142/
+      - name: Full cipher matrix + stress
+        run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --filter "FullyQualifiedName~Stress|FullyQualifiedName~CipherMatrixOrchestrator" --results-directory artifacts/test-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cipher-stress-artifacts
+          path: artifacts/tls
+
+  # ---------------------------------------------------------------
+  # NuGet packaging + consumer smoke test.
+  # ---------------------------------------------------------------
+  package:
+    needs: build-native
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-bridge
+          path: native/CurlBridge/out/build/x64-windows-static-v142/
+      - name: Pack
+        shell: cmd
+        run: build\package.cmd
+      - name: Consumer smoke test (offline)
+        working-directory: consumer
+        run: dotnet test --filter "Category!=RequiresInternet"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/*.nupkg
+
+  # ---------------------------------------------------------------
+  # Lint the workflow itself.
+  # ---------------------------------------------------------------
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        uses: raven-actions/actionlint@v2

@@ -121,7 +121,10 @@ public class CoverageGateTests
             }),
         });
 
-        bool enforce = Environment.GetEnvironmentVariable("CURLHTTP_ENFORCE_COVERAGE") == "1";
+        // Enforcing by default now that every Direct API is covered. Set
+        // CURLHTTP_ENFORCE_COVERAGE=0 to fall back to report-only while
+        // adding a batch of new APIs mid-development.
+        bool enforce = Environment.GetEnvironmentVariable("CURLHTTP_ENFORCE_COVERAGE") != "0";
         if (enforce)
         {
             Assert.True(uncoveredDirect.Count == 0,

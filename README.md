@@ -48,6 +48,23 @@ dotnet run --project samples\CurlHttpClient.Sample
 | [docs/troubleshooting.md](docs/troubleshooting.md) | common failures and their diagnostics |
 | [docs/performance-notes.md](docs/performance-notes.md) | benchmark results and tuning knobs |
 | [docs/cipher-validation.md](docs/cipher-validation.md) | per-suite TLS cipher matrix, validated against pinned openssl s_server instances |
+| [docs/test-strategy.md](docs/test-strategy.md) | test strategy, layers, execution, and CI gates |
+| [docs/traceability-matrix.md](docs/traceability-matrix.md) | requirement → test mapping |
+
+## Testing & certification
+
+```cmd
+dotnet test                     :: all suites except gated stress (~1 min); coverage gate enforcing
+build\run-stress.cmd            :: full 94-cipher matrix + stress/soak/memory (~8 min)
+build\run-coverage.cmd          :: everything + artifacts/ tree + verification-summary.md (~10 min)
+build\validate-ws2012r2.ps1     :: on-target checklist (clean WS2012R2 VM)
+```
+
+The latest certification run: **376 tests, 0 failed** — OpenSSL backend proven at
+runtime, all 94 packaged cipher suites tested-or-classified (0 silent skips),
+100 HttpClient APIs inventoried with an enforcing coverage gate, streaming proven
+bounded (100 MB download ≤ 2 MB managed), and no resource leaks over 200
+handler-churn cycles. See `artifacts/final/verification-summary.md`.
 | [docs/limitations.md](docs/limitations.md) | known limitations and divergences from SocketsHttpHandler |
 
 ## Key properties
