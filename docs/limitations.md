@@ -55,6 +55,15 @@
     target; internally-tracked hop URIs come from Location-header resolution
     and are confirmed against `CURLINFO_EFFECTIVE_URL` at transfer end.
 
+## TLS configuration edge cases
+
+16. **`MinimumTlsVersion = 1.3` combined with an explicit `Tls12CipherList`
+    is contradictory** and fails the handshake with "no ciphers available":
+    OpenSSL version-filters the (now unusable) TLS 1.2 cipher list to empty.
+    Set only `Tls13CipherSuites` when requiring TLS 1.3. This surfaces only
+    for the below-default-strength CCM_8 suites (which need `@SECLEVEL=0`);
+    no mainstream HTTPS configuration is affected.
+
 ## Protocol scope
 
 15. HTTP/1.1 and (flag-gated) HTTP/2 only. No HTTP/3, no WebSockets, no

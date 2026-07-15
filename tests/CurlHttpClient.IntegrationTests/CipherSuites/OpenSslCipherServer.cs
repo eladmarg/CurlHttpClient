@@ -73,20 +73,45 @@ internal sealed class OpenSslCipherServer : IDisposable
     private static OpenSslCipherServer StartOnce(
         string certPemPath, string keyPemPath, bool tls13, string cipher)
     {
+        string protocolArgs = tls13
+            ? $"-tls1_3 -ciphersuites \"{cipher}\""
+            : $"-tls1_2 -cipher \"{cipher}\"";
+        return StartWithArgs(certPemPath, keyPemPath, protocolArgs);
+    }
+
+    /// <summary>Full-control launcher for the TLS matrices: caller supplies
+    /// the exact protocol/cipher/groups/client-cert arguments.</summary>
+    public static OpenSslCipherServer StartWithArgs(
+        string certPemPath, string keyPemPath, string extraArgs)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return StartWithArgsOnce(certPemPath, keyPemPath, extraArgs);
+            }
+            catch (InvalidOperationException) when (attempt < 3)
+            {
+            }
+            catch (TimeoutException) when (attempt < 3)
+            {
+            }
+        }
+    }
+
+    private static OpenSslCipherServer StartWithArgsOnce(
+        string certPemPath, string keyPemPath, string extraArgs)
+    {
         string exe = OpenSslExecutable
             ?? throw new InvalidOperationException(
                 "openssl.exe not found; set CURLHTTP_OPENSSL_EXE or install Git for Windows.");
 
         int port = GetFreePort();
-        string protocolArgs = tls13
-            ? $"-tls1_3 -ciphersuites \"{cipher}\""
-            : $"-tls1_2 -cipher \"{cipher}\"";
-
         var startInfo = new ProcessStartInfo
         {
             FileName = exe,
             Arguments = $"s_server -accept {port} -www -cert \"{certPemPath}\" " +
-                        $"-key \"{keyPemPath}\" {protocolArgs}",
+                        $"-key \"{keyPemPath}\" {extraArgs}",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -188,6 +213,16 @@ public sealed class CipherTestMaterial : IDisposable
     public string RsaKeyPath { get; }
     public string EcdsaCertPath { get; }
     public string EcdsaKeyPath { get; }
+    public string EcdsaP384CertPath { get; }
+    public string EcdsaP384KeyPath { get; }
+
+    /// <summary>Server PEM cert/key paths for the certificate type a cipher's
+    /// authentication requires ("RSA", "ECDSA", "any").</summary>
+    public (string Cert, string Key) ForAuth(string auth) => auth switch
+    {
+        "ECDSA" => (EcdsaCertPath, EcdsaKeyPath),
+        _ => (RsaCertPath, RsaKeyPath), // RSA and TLS1.3 "any" use the RSA leaf
+    };
 
     /// <summary>Server certificates with persisted private keys, for the
     /// SslStream (Schannel) server layer.</summary>
@@ -221,14 +256,24 @@ public sealed class CipherTestMaterial : IDisposable
         using X509Certificate2 rsaLeaf = rsaRequest.Create(
             ca, notBefore, leafNotAfter, RandomNumberGenerator.GetBytes(12));
 
+        // The EC requests have no RSA padding to infer, so signing with the
+        // RSA CA requires the explicit signature-generator overload.
+        var caSignatureGenerator = X509SignatureGenerator.CreateForRSA(caKey, RSASignaturePadding.Pkcs1);
+
         using ECDsa ecdsaLeafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var ecdsaRequest = new CertificateRequest(
             "CN=cipher-test-ecdsa", ecdsaLeafKey, HashAlgorithmName.SHA256);
         AddLeafExtensions(ecdsaRequest);
-        // The EC request has no RSA padding to infer, so signing with the RSA
-        // CA requires the explicit signature-generator overload.
-        var caSignatureGenerator = X509SignatureGenerator.CreateForRSA(caKey, RSASignaturePadding.Pkcs1);
         using X509Certificate2 ecdsaLeaf = ecdsaRequest.Create(
+            ca.SubjectName, caSignatureGenerator,
+            notBefore, leafNotAfter,
+            RandomNumberGenerator.GetBytes(12));
+
+        using ECDsa ecdsaP384Key = ECDsa.Create(ECCurve.NamedCurves.nistP384);
+        var ecdsaP384Request = new CertificateRequest(
+            "CN=cipher-test-ecdsa-p384", ecdsaP384Key, HashAlgorithmName.SHA384);
+        AddLeafExtensions(ecdsaP384Request);
+        using X509Certificate2 ecdsaP384Leaf = ecdsaP384Request.Create(
             ca.SubjectName, caSignatureGenerator,
             notBefore, leafNotAfter,
             RandomNumberGenerator.GetBytes(12));
@@ -238,6 +283,8 @@ public sealed class CipherTestMaterial : IDisposable
         RsaKeyPath = Write("rsa-leaf.key.pem", rsaLeafKey.ExportPkcs8PrivateKeyPem());
         EcdsaCertPath = Write("ecdsa-leaf.pem", ecdsaLeaf.ExportCertificatePem());
         EcdsaKeyPath = Write("ecdsa-leaf.key.pem", ecdsaLeafKey.ExportPkcs8PrivateKeyPem());
+        EcdsaP384CertPath = Write("ecdsa-p384-leaf.pem", ecdsaP384Leaf.ExportCertificatePem());
+        EcdsaP384KeyPath = Write("ecdsa-p384-leaf.key.pem", ecdsaP384Key.ExportPkcs8PrivateKeyPem());
 
         // PKCS#12 round-trip persists the private keys so Schannel (SslStream
         // server side) accepts them.
