@@ -328,6 +328,18 @@ public sealed class IntegrationTestServer : IAsyncDisposable
         });
 
         app.MapGet("/status/{code:int}", (int code) => Results.StatusCode(code));
+
+        app.MapGet("/close-after", (HttpContext context) =>
+        {
+            context.Response.Headers.Connection = "close";
+            return Results.Text("closing");
+        });
+
+        app.MapGet("/set-cookie", (HttpContext context) =>
+        {
+            context.Response.Headers.Append("Set-Cookie", "bleedcookie=should-not-persist; Path=/");
+            return Results.Text("cookie set");
+        });
     }
 
     public async ValueTask DisposeAsync()
