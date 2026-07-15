@@ -24,6 +24,23 @@ internal sealed class CurlResponseContent : HttpContent
     protected override Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken)
         => Task.FromResult<Stream>(_stream);
 
+    /// <summary>Synchronous surface used by HttpClient.Send /
+    /// HttpContent.ReadAsStream. The stream itself supports blocking reads
+    /// (the transfer runs on a dedicated worker), so handing it out is safe.</summary>
+    protected override Stream CreateContentReadStream(CancellationToken cancellationToken)
+        => _stream;
+
+    protected override void SerializeToStream(
+        Stream stream, TransportContext? context, CancellationToken cancellationToken)
+    {
+        if (_consumed)
+        {
+            throw new InvalidOperationException("The response content has already been consumed.");
+        }
+        _consumed = true;
+        _stream.CopyTo(stream);
+    }
+
     protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         => SerializeToStreamAsync(stream, context, CancellationToken.None);
 

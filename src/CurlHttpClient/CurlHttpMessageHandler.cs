@@ -99,6 +99,24 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
             NativeMethods.GetVersionInfoJson(), NativeLibraryLoader.LoadedPath, _trustSource);
     }
 
+    /// <summary>
+    /// Synchronous send. Blocking here is safe by construction: the transfer
+    /// itself runs on a dedicated (non-ThreadPool) worker thread, and every
+    /// completion source in the pipeline runs its continuations
+    /// asynchronously, so completion never depends on the blocked caller.
+    ///
+    /// Notes vs SocketsHttpHandler: this handler supports synchronous HTTP/2
+    /// (SocketsHttpHandler throws), and request content that only implements
+    /// asynchronous serialization is still streamed correctly (the body is
+    /// pumped from the worker thread, not the caller). Many concurrent
+    /// synchronous sends issued FROM ThreadPool threads can still starve the
+    /// pool exactly as with any sync-over-async usage — prefer SendAsync in
+    /// highly concurrent paths.
+    /// </summary>
+    protected override HttpResponseMessage Send(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+        => SendAsync(request, cancellationToken).GetAwaiter().GetResult();
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
