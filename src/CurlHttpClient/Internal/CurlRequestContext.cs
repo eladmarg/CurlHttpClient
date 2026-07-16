@@ -39,10 +39,13 @@ internal sealed class CurlRequestContext : IDisposable
     private HttpResponseMessage? _response;
     private CancellationTokenRegistration _callerRegistration;
 
-    // Event-loop engine only.
-    private bool _multiMode;
-    private CurlBridgeMultiClientHandle? _multiClient;
-    private CurlBridgeRequestHandle? _multiRequestHandle;
+    // Event-loop engine only. volatile: EnableMultiMode is written on the
+    // dispatch thread but these are read by Cancel()/SafeUnpause on arbitrary
+    // cancel threads; a stale read would route cancellation to the worker path
+    // (flag only) and never wake a paused multi transfer.
+    private volatile bool _multiMode;
+    private volatile CurlBridgeMultiClientHandle? _multiClient;
+    private volatile CurlBridgeRequestHandle? _multiRequestHandle;
     private BoundedByteQueue? _uploadQueue;
     private Task? _uploadPump;
 
@@ -345,8 +348,14 @@ internal sealed class CurlRequestContext : IDisposable
         {
             // Non-blocking: pause the transfer when the buffer is full; the
             // consumer's drain triggers the unpause via the space-available
-            // callback wired in EnableMultiMode.
-            return BodyQueue.TryWrite(data) ? 0 : 2;
+            // callback wired in EnableMultiMode. A false return can also mean
+            // the queue was aborted (cancel/dispose) — abort the transfer then
+            // rather than pausing it forever.
+            if (BodyQueue.TryWrite(data))
+            {
+                return 0;
+            }
+            return BodyQueue.IsAborted ? 1 : 2;
         }
         return BodyQueue.Write(data) ? 0 : 1;
     }
@@ -409,9 +418,14 @@ internal sealed class CurlRequestContext : IDisposable
         // rent/return per callback. Returned in OnWorkerFinished/OnMultiFinished.
         if (_uploadBuffer is null || _uploadBuffer.Length < destination.Length)
         {
+            // Null the field before returning the old buffer so that if Rent
+            // throws (OOM) the cleanup paths do not return an array we already
+            // returned (a double-return corrupts the shared pool).
             if (_uploadBuffer is not null)
             {
-                ArrayPool<byte>.Shared.Return(_uploadBuffer);
+                byte[] old = _uploadBuffer;
+                _uploadBuffer = null;
+                ArrayPool<byte>.Shared.Return(old);
             }
             _uploadBuffer = ArrayPool<byte>.Shared.Rent(destination.Length);
         }

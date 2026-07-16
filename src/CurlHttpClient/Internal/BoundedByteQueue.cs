@@ -208,6 +208,15 @@ internal sealed class BoundedByteQueue : IDisposable
                     ? ValueTask.FromException<int>(_error)
                     : new ValueTask<int>(0);
             }
+            // Single-consumer contract: a second concurrent read would orphan
+            // the first (its TCS becomes unreachable and even its cancellation
+            // no-ops), an uncancellable hang. Fail loudly instead.
+            if (_pendingReadTcs is not null)
+            {
+                return ValueTask.FromException<int>(new InvalidOperationException(
+                    "The response stream does not support concurrent reads; " +
+                    "await each ReadAsync before starting the next."));
+            }
             // Park as the single pending reader; the next Write rendezvous-fills.
             tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
             _pendingReadTcs = tcs;
@@ -222,7 +231,7 @@ internal sealed class BoundedByteQueue : IDisposable
         // Cancellation claims the parked slot (only if THIS read is still the
         // parked one), so a producer that already filled the buffer wins and
         // the copied bytes are returned rather than cancelled away.
-        await using (cancellationToken.UnsafeRegister(static (state, token) =>
+        CancellationTokenRegistration registration = cancellationToken.UnsafeRegister(static (state, token) =>
         {
             var (queue, reader) = ((BoundedByteQueue, TaskCompletionSource<int>))state!;
             bool claimed;
@@ -239,9 +248,17 @@ internal sealed class BoundedByteQueue : IDisposable
             {
                 reader.TrySetCanceled(token);
             }
-        }, (this, tcs)))
+        }, (this, tcs));
+        try
         {
             return await tcs.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            // ConfigureAwait(false): this is the only context-capturing await
+            // in the library; a caller blocked on a sync Read from a captured
+            // context must not deadlock disposing the registration.
+            await registration.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -364,6 +381,13 @@ internal sealed class BoundedByteQueue : IDisposable
             {
                 throw _error;
             }
+            // Aborted (not faulted/completed): surface it so the read callback
+            // aborts the transfer rather than pausing forever. Abort sets
+            // neither _error nor _completed, so this check is required.
+            if (_aborted)
+            {
+                throw _abortReason ?? AbortException();
+            }
             if (_completed)
             {
                 return 0; // EOF
@@ -372,6 +396,9 @@ internal sealed class BoundedByteQueue : IDisposable
             return -1; // would-block → pause
         }
     }
+
+    /// <summary>True once Abort has been called (transfer cancelled/disposed).</summary>
+    public bool IsAborted => Volatile.Read(ref _aborted);
 
     /// <summary>Bytes currently buffered (diagnostics/tests).</summary>
     public int BufferedBytes
