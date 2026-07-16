@@ -103,3 +103,39 @@ is buffered on the calling thread).
 15. HTTP/1.1 and (flag-gated) HTTP/2 only. No HTTP/3, no WebSockets, no
     FTP/SMTP/other libcurl protocols (locked out via
     `CURLOPT_PROTOCOLS_STR = "http,https"`).
+
+## Resource bounds and buffering (from the deep review)
+
+17. **Peak response-body memory** is `MaxResponseBufferBytes` plus up to one
+    `ReceiveBufferSize` chunk (plus `ArrayPool` power-of-two rounding), not
+    exactly `MaxResponseBufferBytes` — the queue always admits one chunk when
+    empty to avoid wedging. On the `MultiEventLoop` engine, add up to one
+    HTTP/2 stream window for a stalled h2 download.
+18. **Response header size** is bounded by `MaxResponseHeadersLength` (default
+    1 MiB, all header lines + trailers); a server exceeding it fails the
+    transfer. libcurl separately caps a single header line at 100 KiB.
+19. **A request content stream that ignores its cancellation token** pins one
+    background task plus a 64 KiB pooled buffer until the stream itself returns
+    or faults; a stream that blocks forever leaks those until process exit.
+    Well-behaved streams (and `HttpClient`, which disposes request content
+    after the send) are unaffected.
+20. **Disposing the handler while a cancellation-ignoring request body is
+    mid-transfer** makes `Dispose` wait on the native drain rather than return
+    immediately — this is deliberate (destroying the native client with a live
+    request in flight would be a use-after-free).
+
+## Security configuration notes (from the deep review)
+
+21. **Cipher-string escape hatch**: `Tls12CipherList`/`Tls13CipherSuites` are
+    passed to OpenSSL verbatim, so an embedded `@SECLEVEL=0` weakens what the
+    (always-on) certificate verification will accept. Only set these
+    deliberately. Certificate and hostname verification themselves can never
+    be disabled.
+22. **CA bundle is read live** (`CURLOPT_CAINFO` path) and re-read across new
+    connections, so a party able to *write* the bundle file can inject a trust
+    anchor mid-lifetime. The trust boundary is the filesystem ACL on the bundle
+    path. (Set `CURLHTTP_CA_BLOB=1` for the older snapshot-at-construction
+    behavior, at the cost of per-connection re-parsing.)
+23. **Credentials in a request URL's userinfo** (`https://user:pass@host/`) are
+    not stripped from logs or from `RequestMessage.RequestUri`. Pass
+    credentials via headers, not the URL.
