@@ -30,6 +30,7 @@ internal sealed class BoundedByteQueue : IDisposable
     private bool _aborted;
     private Exception? _abortReason;
     private TaskCompletionSource<bool>? _dataWaiter;
+    private int _syncWaiters;
     private bool _disposed;
 
     private readonly struct Segment(byte[] buffer, int length)
@@ -73,6 +74,12 @@ internal sealed class BoundedByteQueue : IDisposable
                     _bufferedBytes += segment.Length;
                     _dataWaiter?.TrySetResult(true);
                     _dataWaiter = null;
+                    // Only pay the pulse when a synchronous reader is parked;
+                    // the async path signals through _dataWaiter above.
+                    if (_syncWaiters > 0)
+                    {
+                        Monitor.PulseAll(_sync);
+                    }
                     return true;
                 }
                 // Woken by the consumer draining data or by Abort().
@@ -165,6 +172,49 @@ internal sealed class BoundedByteQueue : IDisposable
                 static state => ((TaskCompletionSource<bool>)state!).TrySetResult(true), waiter))
             {
                 await waiter.Task.ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>Synchronous blocking read for the sync HttpClient.Send path —
+    /// copies directly into the caller's span, no temp buffer, no Task. Blocks
+    /// the calling thread (never a transfer thread) until data, EOF, or abort.</summary>
+    public int Read(Span<byte> destination)
+    {
+        if (destination.IsEmpty)
+        {
+            return 0;
+        }
+        lock (_sync)
+        {
+            while (true)
+            {
+                if (_segments.Count > 0)
+                {
+                    return DequeueLocked(destination);
+                }
+                if (_aborted)
+                {
+                    throw _abortReason ?? new ObjectDisposedException(
+                        nameof(BoundedByteQueue), "The response stream was disposed or the request was cancelled.");
+                }
+                if (_completed)
+                {
+                    if (_error is not null)
+                    {
+                        throw _error;
+                    }
+                    return 0;
+                }
+                _syncWaiters++;
+                try
+                {
+                    Monitor.Wait(_sync);
+                }
+                finally
+                {
+                    _syncWaiters--;
+                }
             }
         }
     }

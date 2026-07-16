@@ -43,13 +43,9 @@ internal sealed class CurlResponseStream : Stream
     public override int Read(Span<byte> buffer)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        // Synchronous reads block the caller's thread, never a transfer
-        // thread; acceptable for compat with sync consumers.
-        byte[] temp = new byte[buffer.Length];
-        int read = _context.BodyQueue.ReadAsync(temp, CancellationToken.None)
-            .AsTask().GetAwaiter().GetResult();
-        temp.AsSpan(0, read).CopyTo(buffer);
-        return read;
+        // Blocks the caller's thread (never a transfer thread), copying
+        // straight into the caller's span — no per-read array or Task.
+        return _context.BodyQueue.Read(buffer);
     }
 
     public override void Flush()

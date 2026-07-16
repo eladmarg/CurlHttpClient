@@ -24,13 +24,17 @@ internal sealed class CurlRequestContext : IDisposable
     private readonly HttpRequestMessage _request;
     private readonly TaskCompletionSource<HttpResponseMessage> _responseTcs =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly CancellationTokenSource _bodyReadCts = new();
+    // Only allocated when the request has a body (interrupts the blocking
+    // upload read); bodyless GETs pay nothing. Cancellation of a bodyless
+    // request still works via _cancelRequested + BodyQueue.Abort + native cancel.
+    private CancellationTokenSource? _bodyReadCts;
     private readonly ResponseHeaderParser _parser;
     private readonly CurlHttpEventSourceScope _events;
 
     private CurlBridgeRequestHandle? _nativeRequest;
     private GCHandle _selfHandle;
     private Stream? _requestBodyStream;
+    private byte[]? _uploadBuffer;
     private long _requestBodyStartPosition;
     private HttpResponseMessage? _response;
     private CancellationTokenRegistration _callerRegistration;
@@ -89,6 +93,9 @@ internal sealed class CurlRequestContext : IDisposable
 
         _requestBodyStream = await _request.Content.ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
+        // Created before caller-cancel registration and dispatch, so no window
+        // exists where a body is present but the CTS is null.
+        _bodyReadCts = new CancellationTokenSource();
         if (_requestBodyStream.CanSeek)
         {
             _requestBodyStartPosition = _requestBodyStream.Position;
@@ -127,7 +134,7 @@ internal sealed class CurlRequestContext : IDisposable
         _cancelRequested = true;
         try
         {
-            _bodyReadCts.Cancel();
+            _bodyReadCts?.Cancel();
         }
         catch (ObjectDisposedException)
         {
@@ -218,15 +225,31 @@ internal sealed class CurlRequestContext : IDisposable
         {
             return 0;
         }
-        byte[] rented = ArrayPool<byte>.Shared.Rent(destination.Length);
+        // One buffer reused across all read callbacks for this request (curl
+        // asks for the same upload-buffer size each time), rather than a
+        // rent/return per callback. Returned in OnWorkerFinished.
+        if (_uploadBuffer is null || _uploadBuffer.Length < destination.Length)
+        {
+            if (_uploadBuffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(_uploadBuffer);
+            }
+            _uploadBuffer = ArrayPool<byte>.Shared.Rent(destination.Length);
+        }
         try
         {
             // Async read blocked on this dedicated worker thread: correct for
             // async-only streams (e.g. ASP.NET request bodies with
-            // AllowSynchronousIO=false) and wakeable through _bodyReadCts.
-            int read = stream.ReadAsync(rented.AsMemory(0, destination.Length), _bodyReadCts.Token)
-                .AsTask().GetAwaiter().GetResult();
-            rented.AsSpan(0, read).CopyTo(destination);
+            // AllowSynchronousIO=false) and wakeable through _bodyReadCts. The
+            // fast path avoids a Task allocation when the stream (e.g. a
+            // MemoryStream from ByteArrayContent) completes synchronously.
+            ValueTask<int> readOp = stream.ReadAsync(
+                _uploadBuffer.AsMemory(0, destination.Length),
+                _bodyReadCts?.Token ?? CancellationToken.None);
+            int read = readOp.IsCompletedSuccessfully
+                ? readOp.Result
+                : readOp.AsTask().GetAwaiter().GetResult();
+            _uploadBuffer.AsSpan(0, read).CopyTo(destination);
             return read;
         }
         catch (OperationCanceledException)
@@ -238,10 +261,6 @@ internal sealed class CurlRequestContext : IDisposable
             TrySetCallbackException(new HttpRequestException(
                 "The request content stream failed while being sent.", ex));
             return -1;
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(rented);
         }
     }
 
@@ -375,10 +394,15 @@ internal sealed class CurlRequestContext : IDisposable
         {
             _selfHandle.Free();
         }
+        if (_uploadBuffer is not null)
+        {
+            ArrayPool<byte>.Shared.Return(_uploadBuffer);
+            _uploadBuffer = null;
+        }
         CurlBridgeRequestHandle? native = _nativeRequest;
         _nativeRequest = null;
         native?.Dispose();
-        _bodyReadCts.Dispose();
+        _bodyReadCts?.Dispose();
     }
 
     /* ---------------- response assembly ---------------- */
