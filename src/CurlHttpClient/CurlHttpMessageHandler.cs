@@ -26,8 +26,8 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
 {
     private readonly CurlHttpClientOptions _options;
     private readonly ILogger? _logger;
-    private readonly CurlBridgeClientHandle _client;
-    private readonly CurlRequestDispatcher _dispatcher;
+    private readonly SafeHandle _nativeClient; // CurlBridgeClientHandle or CurlBridgeMultiClientHandle
+    private readonly ICurlDispatcher _dispatcher;
     private readonly string _trustSource;
     private volatile bool _disposed;
 
@@ -79,8 +79,11 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
         }
 
         string? caBundlePath = LoadCaBundle(out _trustSource);
-        _client = CreateNativeClient(options, caBundlePath);
-        _dispatcher = new CurlRequestDispatcher(_client, options);
+        bool multi = options.ExecutionEngine == CurlExecutionEngine.MultiEventLoop;
+        _nativeClient = CreateNativeClient(options, caBundlePath, multi);
+        _dispatcher = multi
+            ? new CurlMultiDispatcher((CurlBridgeMultiClientHandle)_nativeClient, options)
+            : new CurlRequestDispatcher((CurlBridgeClientHandle)_nativeClient, options);
 
         CurlHttpEventSource.Log.HandlerStarted(
             probe.CurlVersion, probe.SslVersion, NativeLibraryLoader.LoadedPath ?? string.Empty);
@@ -319,8 +322,8 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
     private static bool UseCaBlob =>
         Environment.GetEnvironmentVariable("CURLHTTP_CA_BLOB") == "1";
 
-    private static unsafe CurlBridgeClientHandle CreateNativeClient(
-        CurlHttpClientOptions options, string? caBundlePath)
+    private static unsafe SafeHandle CreateNativeClient(
+        CurlHttpClientOptions options, string? caBundlePath, bool multi)
     {
         var strings = new List<IntPtr>();
         IntPtr Utf8(string? value)
@@ -370,6 +373,16 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
                     ConnectionMaxLifetimeSecs = (long)options.PooledConnectionLifetime.TotalSeconds,
                 };
 
+                if (multi)
+                {
+                    CurlBridgeMultiClientHandle multiClient = NativeMethods.MultiCreate(in native);
+                    if (multiClient.IsInvalid)
+                    {
+                        throw new CurlHttpInitializationException(
+                            $"Native event-loop client creation failed: {NativeMethods.GetLastGlobalError()}");
+                    }
+                    return multiClient;
+                }
                 CurlBridgeClientHandle client = NativeMethods.ClientCreate(in native);
                 if (client.IsInvalid)
                 {
@@ -393,10 +406,11 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
         if (disposing && !_disposed)
         {
             _disposed = true;
-            // Order matters: stop admission and drain workers first, then the
-            // native client (whose destroy insists on zero active requests).
+            // Order matters: stop admission and drain workers/loop first, then
+            // the native client (whose destroy insists on zero active requests
+            // / joins the loop thread).
             _dispatcher.Dispose();
-            _client.Dispose();
+            _nativeClient.Dispose();
         }
         base.Dispose(disposing);
     }

@@ -103,6 +103,40 @@ internal static partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
     internal static partial IntPtr RequestGetEffectiveUrlPtr(CurlBridgeRequestHandle request);
 
+    /* ---- event-loop (curl_multi) engine ---- */
+
+    [LibraryImport(LibraryName, EntryPoint = "curl_bridge_multi_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    internal static partial CurlBridgeMultiClientHandle MultiCreate(in BridgeClientOptionsNative options);
+
+    [LibraryImport(LibraryName, EntryPoint = "curl_bridge_multi_destroy")]
+    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    internal static partial void MultiDestroy(IntPtr client);
+
+    [LibraryImport(LibraryName, EntryPoint = "curl_bridge_multi_request_create")]
+    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    internal static partial CurlBridgeRequestHandle MultiRequestCreate(CurlBridgeMultiClientHandle client);
+
+    [LibraryImport(LibraryName, EntryPoint = "curl_bridge_multi_submit")]
+    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    internal static partial CurlBridgeResult MultiSubmit(
+        CurlBridgeMultiClientHandle client, CurlBridgeRequestHandle request);
+
+    [LibraryImport(LibraryName, EntryPoint = "curl_bridge_multi_cancel")]
+    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    internal static partial void MultiCancel(
+        CurlBridgeMultiClientHandle client, CurlBridgeRequestHandle request);
+
+    [LibraryImport(LibraryName, EntryPoint = "curl_bridge_multi_unpause_write")]
+    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    internal static partial void MultiUnpauseWrite(
+        CurlBridgeMultiClientHandle client, CurlBridgeRequestHandle request);
+
+    [LibraryImport(LibraryName, EntryPoint = "curl_bridge_multi_unpause_read")]
+    [UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    internal static partial void MultiUnpauseRead(
+        CurlBridgeMultiClientHandle client, CurlBridgeRequestHandle request);
+
     internal static string GetLastGlobalError()
         => Marshal.PtrToStringUTF8(GetLastGlobalErrorPtr()) ?? string.Empty;
 

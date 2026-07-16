@@ -68,6 +68,14 @@ namespace bridge
                          curl_off_t ultotal, curl_off_t ulnow);
     int curl_debug_cb(CURL* handle, curl_infotype type, char* data, size_t size,
                       void* userdata);
+
+    /* Shared request configuration + result extraction (bridge_request.cpp),
+     * reused by both the blocking-send and event-loop engines. configure()
+     * appends bridge-generated headers to *extra_headers (caller frees +
+     * detaches from request->headers after the transfer). */
+    curl_bridge_result configure(CURL* h, curl_bridge_request* request,
+                                 curl_slist** extra_headers);
+    void fill_info(CURL* h, CURLcode code, curl_bridge_response_info* info);
 } // namespace bridge
 
 /* Sentinel for "request has no body at all" (vs -1 = streaming, unknown size). */
@@ -135,6 +143,13 @@ struct curl_bridge_request
     char error_buffer[CURL_ERROR_SIZE] = {0};
     std::string last_error;
     std::string effective_url;
+
+    /* Event-loop engine only (owned by the loop thread once submitted).
+     * easy is the handle currently running this request; extra_headers is the
+     * bridge-generated slist tail to free on completion. */
+    CURL* easy = nullptr;
+    curl_slist* extra_headers = nullptr;
+    bool submitted = false;
 };
 
 #endif /* CURL_BRIDGE_INTERNAL_H */

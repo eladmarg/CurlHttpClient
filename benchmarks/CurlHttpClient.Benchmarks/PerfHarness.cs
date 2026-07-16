@@ -26,6 +26,13 @@ public static class PerfHarness
         string Name, long Iterations, double MedianUs, double P95Us, double P99Us,
         long AllocBytesPerOp, string Notes);
 
+    /// <summary>CURLHTTP_ENGINE=multi selects the event-loop engine so the
+    /// same harness can benchmark both engines.</summary>
+    private static CurlExecutionEngine Engine =>
+        Environment.GetEnvironmentVariable("CURLHTTP_ENGINE") == "multi"
+            ? CurlExecutionEngine.MultiEventLoop
+            : CurlExecutionEngine.DedicatedWorkers;
+
     public static async Task<int> RunAsync(string[] args)
     {
         string outPath = args.Length > 1 ? args[1] : "perf-harness.json";
@@ -51,6 +58,7 @@ public static class PerfHarness
                 CertificateAuthorityBundlePath = caBundle,
                 UploadBufferSize = uploadBuf,
                 ReceiveBufferSize = recvBuf,
+                ExecutionEngine = Engine,
             }))
             using (var client = new HttpClient(handler))
             {
@@ -92,6 +100,7 @@ public static class PerfHarness
             using (var handler = new CurlHttpMessageHandler(new CurlHttpClientOptions
             {
                 CertificateAuthorityBundlePath = realisticBundle,
+                ExecutionEngine = Engine,
             }))
             using (var client = new HttpClient(handler))
             {
@@ -111,6 +120,7 @@ public static class PerfHarness
                     var h = new CurlHttpMessageHandler(new CurlHttpClientOptions
                     {
                         CertificateAuthorityBundlePath = caBundle,
+                        ExecutionEngine = Engine,
                     });
                     h.Dispose();
                     return Task.CompletedTask;
@@ -183,6 +193,7 @@ public static class PerfHarness
         using var handler = new CurlHttpMessageHandler(new CurlHttpClientOptions
         {
             CertificateAuthorityBundlePath = caBundle,
+            ExecutionEngine = Engine,
         });
         using var client = new HttpClient(handler);
 

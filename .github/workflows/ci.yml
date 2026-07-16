@@ -94,8 +94,15 @@ jobs:
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
-      - name: Integration + TLS + fast cipher suites
+      - name: Integration + TLS + fast cipher suites (worker engine)
         run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --logger "trx;LogFileName=integration.trx" --results-directory artifacts/test-results
+      - name: Behavioral suite against the event-loop engine
+        # The coverage gate is worker-specific; run the shared-fixture
+        # behavioral suite against MultiEventLoop to certify both engines.
+        env:
+          CURLHTTP_ENGINE: multi
+          CURLHTTP_ENFORCE_COVERAGE: "0"
+        run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --logger "trx;LogFileName=integration-multi.trx" --results-directory artifacts/test-results
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -122,8 +129,12 @@ jobs:
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
-      - name: Full cipher matrix + stress
+      - name: Full cipher matrix + stress (worker engine)
         run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --filter "FullyQualifiedName~Stress|FullyQualifiedName~CipherMatrixOrchestrator" --results-directory artifacts/test-results
+      - name: Stress + bounded-memory against the event-loop engine
+        env:
+          CURLHTTP_ENGINE: multi
+        run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --filter "FullyQualifiedName~Stress" --results-directory artifacts/test-results
       - uses: actions/upload-artifact@v4
         if: always()
         with:

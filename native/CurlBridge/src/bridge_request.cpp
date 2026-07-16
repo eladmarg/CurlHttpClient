@@ -79,8 +79,8 @@ namespace
         return curl_easy_setopt(h, CURLOPT_CUSTOMREQUEST, m.c_str());
     }
 
-    curl_bridge_result configure(CURL* h, curl_bridge_request* request,
-                                 curl_slist** extra_headers)
+    curl_bridge_result configure_impl(CURL* h, curl_bridge_request* request,
+                                      curl_slist** extra_headers)
     {
         const bridge::ClientConfig& cfg = request->client->config;
 
@@ -297,7 +297,7 @@ namespace
         return CURL_BRIDGE_OK;
     }
 
-    void fill_info(CURL* h, CURLcode code, curl_bridge_response_info* info)
+    void fill_info_impl(CURL* h, CURLcode code, curl_bridge_response_info* info)
     {
         if (info == nullptr || info->struct_size < sizeof(curl_bridge_response_info))
         {
@@ -351,6 +351,22 @@ namespace
             info->content_length = -1;
     }
 } // namespace
+
+namespace bridge
+{
+    /* Public-to-the-bridge wrappers so bridge_multi.cpp can reuse the request
+     * configuration + result extraction without duplicating them. */
+    curl_bridge_result configure(CURL* h, curl_bridge_request* request,
+                                 curl_slist** extra_headers)
+    {
+        return configure_impl(h, request, extra_headers);
+    }
+
+    void fill_info(CURL* h, CURLcode code, curl_bridge_response_info* info)
+    {
+        fill_info_impl(h, code, info);
+    }
+} // namespace bridge
 
 extern "C" {
 
@@ -594,11 +610,11 @@ curl_bridge_request_send(curl_bridge_request* request,
         }
         else
         {
-            result = configure(handle, request, &extra_headers);
+            result = configure_impl(handle, request, &extra_headers);
             if (result == CURL_BRIDGE_OK)
             {
                 const CURLcode code = curl_easy_perform(handle);
-                fill_info(handle, code, info);
+                fill_info_impl(handle, code, info);
 
                 const char* effective = nullptr;
                 if (curl_easy_getinfo(handle, CURLINFO_EFFECTIVE_URL, &effective) == CURLE_OK &&

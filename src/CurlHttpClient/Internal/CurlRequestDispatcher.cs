@@ -26,7 +26,7 @@ internal sealed record NativeRequestPlan(
 /// response body is still streaming continues to own its thread. Admission
 /// beyond capacity fails fast after WorkerAdmissionTimeout.
 /// </summary>
-internal sealed class CurlRequestDispatcher : IDisposable
+internal sealed class CurlRequestDispatcher : ICurlDispatcher
 {
     private readonly CurlBridgeClientHandle _client;
     private readonly CurlHttpClientOptions _options;

@@ -71,7 +71,12 @@ size_t curl_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata)
             request->callbacks.context,
             reinterpret_cast<const uint8_t*>(ptr),
             total);
-        return rc == 0 ? total : CURL_WRITEFUNC_ERROR;
+        switch (rc)
+        {
+        case CURL_BRIDGE_CB_OK:    return total;
+        case CURL_BRIDGE_CB_PAUSE: return CURL_WRITEFUNC_PAUSE; /* event-loop backpressure */
+        default:                   return CURL_WRITEFUNC_ERROR;
+        }
     }
     catch (...)
     {
@@ -147,6 +152,10 @@ size_t curl_read_cb(char* buffer, size_t size, size_t nitems, void* userdata)
             request->callbacks.context,
             reinterpret_cast<uint8_t*>(buffer),
             size * nitems);
+        if (produced == CURL_BRIDGE_READ_PAUSE)
+        {
+            return CURL_READFUNC_PAUSE; /* event-loop: no upload bytes yet */
+        }
         if (produced < 0)
         {
             return CURL_READFUNC_ABORT;

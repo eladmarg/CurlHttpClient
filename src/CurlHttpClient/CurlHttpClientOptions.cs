@@ -2,6 +2,21 @@ using System.Net;
 
 namespace CurlHttp;
 
+/// <summary>Native execution engine for <see cref="CurlHttpMessageHandler"/>.</summary>
+public enum CurlExecutionEngine
+{
+    /// <summary>Blocking curl_easy_perform on a bounded pool of dedicated
+    /// worker threads (default). Simple and proven; each in-flight request
+    /// owns a thread.</summary>
+    DedicatedWorkers,
+
+    /// <summary>A single curl_multi event-loop thread drives all transfers:
+    /// connections shared across every request, HTTP/2 multiplexing, instant
+    /// cancellation, no per-request thread. Backpressure is via libcurl's
+    /// pause/resume. Opt-in.</summary>
+    MultiEventLoop,
+}
+
 /// <summary>
 /// Handler-lifetime configuration for <see cref="CurlHttpMessageHandler"/>.
 /// All values are fixed at handler construction (init-only), mirroring how
@@ -82,6 +97,14 @@ public sealed class CurlHttpClientOptions
     /// <summary>Master switch for <see cref="Proxy"/>. When false, or when
     /// <see cref="Proxy"/> is null, requests go direct.</summary>
     public bool UseProxy { get; init; } = true;
+
+    /// <summary>Native execution engine. <see cref="CurlExecutionEngine.DedicatedWorkers"/>
+    /// (default) runs each request on a blocking worker thread. <see
+    /// cref="CurlExecutionEngine.MultiEventLoop"/> drives all transfers through
+    /// one curl_multi event-loop thread: connections are shared across every
+    /// request, HTTP/2 streams multiplex, cancellation is instant, and there
+    /// is no per-request thread. Opt-in.</summary>
+    public CurlExecutionEngine ExecutionEngine { get; init; } = CurlExecutionEngine.DedicatedWorkers;
 
     /// <summary>Negotiate HTTP/2 via ALPN. Off by default: with the current
     /// blocking-transfer architecture each request owns its own connection, so

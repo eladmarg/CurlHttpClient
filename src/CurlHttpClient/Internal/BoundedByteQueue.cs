@@ -57,6 +57,13 @@ internal sealed class BoundedByteQueue : IDisposable
     private int _syncWaiters;
     private bool _disposed;
 
+    // Event-loop engine only: non-blocking producer/consumer with pause/resume
+    // notifications instead of thread blocking.
+    private Action? _onSpaceAvailable;   // download: producer resumed after a full TryWrite
+    private Action? _onDataAvailable;    // upload: consumer resumed after data enqueued
+    private bool _producerPaused;        // a TryWrite returned false (download backpressure)
+    private bool _consumerWaitingUpload; // a TryReadUpload returned would-block
+
     private readonly struct Segment(byte[] buffer, int length)
     {
         public readonly byte[] Buffer = buffer;
@@ -134,6 +141,7 @@ internal sealed class BoundedByteQueue : IDisposable
         {
             _completed = true;
             ClaimPendingReaderLocked()?.SetResult(0); // EOF
+            WakeWaitingUploadConsumerLocked();
             Monitor.PulseAll(_sync);
         }
     }
@@ -149,6 +157,7 @@ internal sealed class BoundedByteQueue : IDisposable
             _error ??= error;
             _completed = true;
             ClaimPendingReaderLocked()?.SetException(error);
+            WakeWaitingUploadConsumerLocked();
             Monitor.PulseAll(_sync);
         }
     }
@@ -280,6 +289,90 @@ internal sealed class BoundedByteQueue : IDisposable
         }
     }
 
+    /// <summary>Registers the callback invoked when buffer space frees after a
+    /// <see cref="TryWrite"/> returned false (download write-unpause). The
+    /// callback only marshals a native unpause command — it must not reenter
+    /// the queue.</summary>
+    public void SetSpaceAvailableCallback(Action callback) => _onSpaceAvailable = callback;
+
+    /// <summary>Registers the callback invoked when upload data is enqueued
+    /// after a <see cref="TryReadUpload"/> returned would-block (read-unpause).</summary>
+    public void SetDataAvailableCallback(Action callback) => _onDataAvailable = callback;
+
+    /// <summary>Non-blocking producer for the event-loop write callback
+    /// (download body). Returns true when the bytes were taken (rendezvous or
+    /// buffered), false when the buffer is full — the caller pauses the
+    /// transfer and resumes on the space-available callback.</summary>
+    public bool TryWrite(ReadOnlySpan<byte> data)
+    {
+        if (data.IsEmpty)
+        {
+            return !Volatile.Read(ref _aborted);
+        }
+        lock (_sync)
+        {
+            if (_aborted || _completed)
+            {
+                return false;
+            }
+            if (_pendingReadTcs is not null)
+            {
+                Span<byte> dest = _pendingReadDest.Span;
+                int n = Math.Min(dest.Length, data.Length);
+                data[..n].CopyTo(dest);
+                TaskCompletionSource<int> reader = _pendingReadTcs;
+                _pendingReadTcs = null;
+                _pendingReadDest = default;
+                if (n < data.Length)
+                {
+                    EnqueueLocked(data[n..]);
+                }
+                reader.SetResult(n);
+                return true;
+            }
+            if (_bufferedBytes < _capacity || _segments.Count == 0)
+            {
+                EnqueueLocked(data);
+                if (_syncWaiters > 0)
+                {
+                    Monitor.PulseAll(_sync);
+                }
+                return true;
+            }
+            _producerPaused = true;
+            return false;
+        }
+    }
+
+    /// <summary>Non-blocking consumer for the event-loop read callback (upload
+    /// body). Returns >0 bytes copied, 0 at EOF, -1 would-block (the caller
+    /// pauses and resumes on the data-available callback). Throws if the upload
+    /// producer faulted.</summary>
+    public int TryReadUpload(Span<byte> destination)
+    {
+        if (destination.IsEmpty)
+        {
+            return 0;
+        }
+        lock (_sync)
+        {
+            if (_segments.Count > 0)
+            {
+                return DequeueLocked(destination);
+            }
+            if (_error is not null)
+            {
+                throw _error;
+            }
+            if (_completed)
+            {
+                return 0; // EOF
+            }
+            _consumerWaitingUpload = true;
+            return -1; // would-block → pause
+        }
+    }
+
     /// <summary>Bytes currently buffered (diagnostics/tests).</summary>
     public int BufferedBytes
     {
@@ -300,12 +393,27 @@ internal sealed class BoundedByteQueue : IDisposable
         return tcs;
     }
 
+    private void WakeWaitingUploadConsumerLocked()
+    {
+        if (_consumerWaitingUpload)
+        {
+            _consumerWaitingUpload = false;
+            _onDataAvailable?.Invoke();
+        }
+    }
+
     private void EnqueueLocked(ReadOnlySpan<byte> data)
     {
         byte[] buffer = ArrayPool<byte>.Shared.Rent(data.Length);
         data.CopyTo(buffer);
         _segments.Enqueue(new Segment(buffer, data.Length));
         _bufferedBytes += data.Length;
+        // Upload queue: wake a read callback that paused on an empty buffer.
+        if (_consumerWaitingUpload)
+        {
+            _consumerWaitingUpload = false;
+            _onDataAvailable?.Invoke(); // marshals a native unpause; no reentrancy
+        }
     }
 
     private int DequeueLocked(Span<byte> destination)
@@ -331,7 +439,13 @@ internal sealed class BoundedByteQueue : IDisposable
                 _headOffset += toCopy;
             }
         }
-        Monitor.PulseAll(_sync); // wake a producer waiting for space
+        Monitor.PulseAll(_sync); // wake a blocking producer waiting for space
+        // Download queue: resume a paused event-loop producer once space frees.
+        if (_producerPaused && _bufferedBytes < _capacity)
+        {
+            _producerPaused = false;
+            _onSpaceAvailable?.Invoke(); // marshals a native unpause; no reentrancy
+        }
         return written;
     }
 

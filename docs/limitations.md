@@ -11,18 +11,52 @@
 3. One native bridge per process: the first handler's `NativeLibraryPath`
    wins; a conflicting later path throws.
 
-## Architecture (Option A: blocking worker pool)
+## Architecture — default engine (`DedicatedWorkers`, blocking worker pool)
 
 4. **No HTTP/2 multiplexing and no cross-thread connection sharing** —
-   libcurl only multiplexes/shares within one easy/multi handle. N concurrent
-   requests to one origin = up to N connections. HTTP/2 (`EnableHttp2`) is
-   therefore off by default and purely a protocol-compatibility switch.
-   The C ABI is shaped so a `curl_multi` event-loop backend can lift this
-   without public API changes.
+   libcurl only multiplexes/shares within one easy/multi handle, and each
+   pooled worker owns its own easy handle. N concurrent requests to one origin
+   = up to N connections. HTTP/2 (`EnableHttp2`) on this engine is therefore
+   purely a protocol-compatibility switch. The `MultiEventLoop` engine (below)
+   lifts this.
 5. Each in-flight request (including an open streaming response) pins one
    dedicated worker thread; admission beyond `MaxConcurrentRequests` fails
    fast after `WorkerAdmissionTimeout`.
-6. Synchronous `HttpClient.Send` is not supported (async-only handler).
+6. **Cancellation latency floor ~1 s**: an in-flight transfer waiting on the
+   network (e.g. blocked reading response headers) is aborted at libcurl's
+   progress-callback cadence (~1 s), not instantly. The `MultiEventLoop`
+   engine cancels in well under a millisecond (`curl_multi_wakeup`).
+
+## Architecture — opt-in engine (`ExecutionEngine = MultiEventLoop`)
+
+A single dedicated loop thread drives all transfers through one `curl_multi`
+handle. Connections live in one shared pool (consolidated across every
+request), HTTP/2 streams multiplex onto one connection, and cancellation is
+near-instant. Correctness is identical to the default engine — the entire
+certification suite passes against both. Choose it for high concurrency to a
+single origin (especially with `EnableHttp2`), cancellation-sensitive
+workloads, or many idle-but-reused connections. Its caveats:
+
+  - **HTTP/2 upstream pause buffering**: pausing the write side
+    (`CURL_WRITEFUNC_PAUSE`) stops *our* draining, but nghttp2 may already have
+    buffered up to the HTTP/2 stream/connection flow-control window (order
+    ~10 MB) before the pause takes effect. Peak resident memory for a stalled
+    HTTP/2 download can therefore exceed `MaxResponseBufferBytes` by roughly
+    one stream window. HTTP/1.1 backpressure is exact (TCP-level). Bound this
+    by consuming response streams promptly on HTTP/2.
+  - **Admission timeout counts while queued**: `WorkerAdmissionTimeout` bounds
+    the wait for an in-flight slot / per-origin permit, and that clock runs
+    while the request is queued behind the concurrency gate — a request can
+    time out at admission before ever reaching the wire under sustained
+    saturation. Size `MaxConcurrentRequests` / `MaxConnectionsPerServer` for
+    the offered load.
+  - **Per-handler startup cost**: creating a handler on this engine spins up
+    the loop thread (~300 µs one-time), versus the worker engine's lazy
+    threads. Immaterial for a long-lived, shared handler (the intended usage);
+    avoid churning handlers per request on either engine.
+
+Synchronous `HttpClient.Send` is supported on both engines (the async transfer
+is buffered on the calling thread).
 
 ## Behavioral divergences from SocketsHttpHandler
 

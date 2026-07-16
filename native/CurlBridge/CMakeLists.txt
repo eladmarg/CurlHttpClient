@@ -20,6 +20,7 @@ add_library(curl_http_bridge SHARED
     src/bridge_callbacks.cpp
     src/bridge_error.cpp
     src/bridge_ciphers.cpp
+    src/bridge_multi.cpp
 )
 
 target_include_directories(curl_http_bridge

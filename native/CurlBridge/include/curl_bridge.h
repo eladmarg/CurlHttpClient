@@ -59,6 +59,10 @@ extern "C" {
 
 typedef struct curl_bridge_client curl_bridge_client;
 typedef struct curl_bridge_request curl_bridge_request;
+/* Event-loop (curl_multi) engine: one native loop thread drives all
+ * transfers, giving cross-request connection sharing, HTTP/2 multiplexing,
+ * instant cancellation, and no per-request dedicated thread. */
+typedef struct curl_bridge_multi_client curl_bridge_multi_client;
 
 /* ------------------------------------------------------------------ */
 /* Result codes                                                        */
@@ -94,7 +98,12 @@ typedef enum curl_bridge_result
 #define CURL_BRIDGE_HEADER_TRAILER       0x4u /* line arrived after the first body byte (trailer) */
 #define CURL_BRIDGE_HEADER_BLOCK_END     0x8u /* line is the blank CRLF terminating a block */
 
-/* Return 0 to continue, non-zero to abort the transfer. */
+/* Return 0 to continue, 1 to abort the transfer, 2 to PAUSE (event-loop
+ * engine only: the managed buffer is full; the transfer resumes when the
+ * consumer calls curl_bridge_multi_unpause_write). */
+#define CURL_BRIDGE_CB_OK    0
+#define CURL_BRIDGE_CB_ABORT 1
+#define CURL_BRIDGE_CB_PAUSE 2
 typedef int32_t (CURL_BRIDGE_CALL *curl_bridge_write_callback)(
     void* context,
     const uint8_t* data,
@@ -110,7 +119,10 @@ typedef int32_t (CURL_BRIDGE_CALL *curl_bridge_header_callback)(
     uint32_t flags,
     int32_t status_code);
 
-/* Return >0 = bytes produced, 0 = end of body, -1 = abort the transfer. */
+/* Return >0 = bytes produced, 0 = end of body, -1 = abort, -2 = PAUSE
+ * (event-loop engine only: no upload bytes available yet; resumes when the
+ * managed pump calls curl_bridge_multi_unpause_read). */
+#define CURL_BRIDGE_READ_PAUSE (-2)
 typedef int64_t (CURL_BRIDGE_CALL *curl_bridge_read_callback)(
     void* context,
     uint8_t* destination,
@@ -132,6 +144,16 @@ typedef void (CURL_BRIDGE_CALL *curl_bridge_debug_callback)(
     const char* data,
     size_t data_length);
 
+/* Event-loop engine only: invoked on the loop thread when a submitted request
+ * finishes (success, failure, or cancellation). `info` is valid only for the
+ * duration of the call. After this returns the request may be destroyed. */
+/* struct tag forward-references the response metadata defined below. */
+struct curl_bridge_response_info;
+typedef void (CURL_BRIDGE_CALL *curl_bridge_completion_callback)(
+    void* context,
+    curl_bridge_result result,
+    const struct curl_bridge_response_info* info);
+
 typedef struct curl_bridge_callbacks
 {
     uint32_t struct_size;
@@ -141,6 +163,7 @@ typedef struct curl_bridge_callbacks
     curl_bridge_read_callback   on_read_body;   /* NULL when the request has no body */
     curl_bridge_seek_callback   on_seek_body;   /* NULL when the body is not seekable */
     curl_bridge_debug_callback  on_debug;       /* NULL unless verbose logging enabled */
+    curl_bridge_completion_callback on_complete; /* event-loop engine only; NULL for blocking send */
 } curl_bridge_callbacks;
 
 /* ------------------------------------------------------------------ */
@@ -352,6 +375,48 @@ curl_bridge_request_get_last_error(const curl_bridge_request* request);
 /* Final effective URL after redirects. Valid until request destroy. */
 CURL_BRIDGE_API const char* CURL_BRIDGE_CALL
 curl_bridge_request_get_effective_url(const curl_bridge_request* request);
+
+/* ------------------------------------------------------------------ */
+/* Event-loop (curl_multi) engine                                      */
+/* ------------------------------------------------------------------ */
+
+/* Creates a multi client: validates options (like curl_bridge_client_create),
+ * builds a curl_multi handle, and starts one dedicated loop thread. Returns
+ * NULL on failure (curl_bridge_get_last_global_error for the reason). */
+CURL_BRIDGE_API curl_bridge_multi_client* CURL_BRIDGE_CALL
+curl_bridge_multi_create(const curl_bridge_client_options* options);
+
+/* Stops the loop thread (cancelling any in-flight transfers) and frees the
+ * multi handle and pool. All submitted requests receive their completion
+ * callback (CANCELLED) before this returns. */
+CURL_BRIDGE_API void CURL_BRIDGE_CALL
+curl_bridge_multi_destroy(curl_bridge_multi_client* client);
+
+/* Creates a request bound to a multi client (analogue of
+ * curl_bridge_request_create). Configure it with the same
+ * curl_bridge_request_set_* functions, then submit it. */
+CURL_BRIDGE_API curl_bridge_request* CURL_BRIDGE_CALL
+curl_bridge_multi_request_create(curl_bridge_multi_client* client);
+
+/* Submits a configured request to the loop. callbacks.on_complete is invoked
+ * on the loop thread when it finishes. Returns OK if queued. */
+CURL_BRIDGE_API curl_bridge_result CURL_BRIDGE_CALL
+curl_bridge_multi_submit(curl_bridge_multi_client* client, curl_bridge_request* request);
+
+/* Requests prompt cancellation of a submitted request (thread-safe). The
+ * completion callback fires with CURL_BRIDGE_CANCELLED. */
+CURL_BRIDGE_API void CURL_BRIDGE_CALL
+curl_bridge_multi_cancel(curl_bridge_multi_client* client, curl_bridge_request* request);
+
+/* Resumes a transfer paused by the write callback (consumer drained the
+ * managed buffer). Thread-safe; marshaled to the loop thread. */
+CURL_BRIDGE_API void CURL_BRIDGE_CALL
+curl_bridge_multi_unpause_write(curl_bridge_multi_client* client, curl_bridge_request* request);
+
+/* Resumes a transfer paused by the read callback (upload bytes now available).
+ * Thread-safe; marshaled to the loop thread. */
+CURL_BRIDGE_API void CURL_BRIDGE_CALL
+curl_bridge_multi_unpause_read(curl_bridge_multi_client* client, curl_bridge_request* request);
 
 #ifdef __cplusplus
 } /* extern "C" */

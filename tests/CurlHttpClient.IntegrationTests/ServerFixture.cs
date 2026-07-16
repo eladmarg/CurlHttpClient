@@ -10,10 +10,19 @@ public sealed class ServerFixture : IAsyncLifetime
     public CurlHttpMessageHandler Handler { get; private set; } = null!;
     public HttpClient Client { get; private set; } = null!;
 
+    /// <summary>Set CURLHTTP_ENGINE=multi to run the shared-fixture suite
+    /// against the event-loop engine instead of the dedicated-worker default.
+    /// Lets the whole behavioral suite validate both engines.</summary>
+    public static CurlExecutionEngine Engine =>
+        Environment.GetEnvironmentVariable("CURLHTTP_ENGINE") == "multi"
+            ? CurlExecutionEngine.MultiEventLoop
+            : CurlExecutionEngine.DedicatedWorkers;
+
     public CurlHttpClientOptions BaseOptions => new()
     {
         CertificateAuthorityBundlePath = Server.CaBundlePath,
         ConnectTimeout = TimeSpan.FromSeconds(10),
+        ExecutionEngine = Engine,
     };
 
     public async Task InitializeAsync()

@@ -85,6 +85,8 @@ internal unsafe struct BridgeCallbacksNative
     public delegate* unmanaged[Cdecl]<void*, byte*, nuint, long> OnReadBody;
     public delegate* unmanaged[Cdecl]<void*, long, int, int> OnSeekBody;
     public delegate* unmanaged[Cdecl]<void*, int, byte*, nuint, void> OnDebug;
+    /// <summary>Event-loop engine only; null for the blocking-send engine.</summary>
+    public delegate* unmanaged[Cdecl]<void*, int, BridgeResponseInfoNative*, void> OnComplete;
 }
 
 /// <summary>Mirror of <c>curl_bridge_response_info</c>.</summary>

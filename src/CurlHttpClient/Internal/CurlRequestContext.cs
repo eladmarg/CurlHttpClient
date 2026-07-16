@@ -39,6 +39,13 @@ internal sealed class CurlRequestContext : IDisposable
     private HttpResponseMessage? _response;
     private CancellationTokenRegistration _callerRegistration;
 
+    // Event-loop engine only.
+    private bool _multiMode;
+    private CurlBridgeMultiClientHandle? _multiClient;
+    private CurlBridgeRequestHandle? _multiRequestHandle;
+    private BoundedByteQueue? _uploadQueue;
+    private Task? _uploadPump;
+
     private volatile Exception? _callbackException;
     private volatile bool _cancelRequested;
     private volatile bool _callerTokenTriggered;
@@ -140,6 +147,13 @@ internal sealed class CurlRequestContext : IDisposable
         {
         }
         BodyQueue.Abort(CreateCancellationException());
+
+        if (_multiMode)
+        {
+            // Instant: wakes the loop thread, which removes the handle.
+            SafeUnpause(NativeMethods.MultiCancel);
+            return;
+        }
         CurlBridgeRequestHandle? native = _nativeRequest;
         if (native is not null && !native.IsInvalid && !native.IsClosed)
         {
@@ -182,9 +196,110 @@ internal sealed class CurlRequestContext : IDisposable
         return GCHandle.ToIntPtr(_selfHandle);
     }
 
+    /* ---------------- event-loop engine ---------------- */
+
+    /// <summary>Switches this context to non-blocking (event-loop) behavior:
+    /// the write callback pauses instead of blocking, and — when the request
+    /// has a body — an async pump feeds a bounded upload queue that the read
+    /// callback drains without blocking the loop thread.</summary>
+    public void EnableMultiMode(
+        CurlBridgeMultiClientHandle client, CurlBridgeRequestHandle requestHandle, int uploadBufferBytes)
+    {
+        _multiMode = true;
+        _multiClient = client;
+        _multiRequestHandle = requestHandle;
+        BodyQueue.SetSpaceAvailableCallback(RequestUnpauseWrite);
+
+        // The pump exists only for non-seekable bodies. A seekable body
+        // (ByteArrayContent/StringContent/JsonContent → MemoryStream) is read
+        // directly in OnReadBody so libcurl can rewind and resend it on an
+        // auth/redirect (a 307/308 POST); a one-shot pump queue cannot rewind.
+        if (ContentLength != long.MinValue && _requestBodyStream is { CanSeek: false })
+        {
+            _uploadQueue = new BoundedByteQueue(Math.Max(uploadBufferBytes, 64 * 1024) * 2);
+            _uploadQueue.SetDataAvailableCallback(RequestUnpauseRead);
+            _uploadPump = Task.Run(PumpUploadAsync);
+        }
+    }
+
+    private void RequestUnpauseWrite() => SafeUnpause(NativeMethods.MultiUnpauseWrite);
+
+    private void RequestUnpauseRead() => SafeUnpause(NativeMethods.MultiUnpauseRead);
+
+    private void SafeUnpause(Action<CurlBridgeMultiClientHandle, CurlBridgeRequestHandle> unpause)
+    {
+        CurlBridgeMultiClientHandle? client = _multiClient;
+        CurlBridgeRequestHandle? request = _multiRequestHandle;
+        if (client is null || request is null || client.IsClosed || request.IsClosed)
+        {
+            return;
+        }
+        try
+        {
+            unpause(client, request);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The transfer already finished; nothing to resume.
+        }
+    }
+
+    private async Task PumpUploadAsync()
+    {
+        Stream stream = _requestBodyStream!;
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+        try
+        {
+            int read;
+            while ((read = await stream.ReadAsync(
+                buffer, _bodyReadCts?.Token ?? CancellationToken.None).ConfigureAwait(false)) > 0)
+            {
+                // Blocks this pump task (not the loop thread) when the upload
+                // buffer is full — bounded memory. Returns false on abort.
+                if (!_uploadQueue!.Write(buffer.AsSpan(0, read)))
+                {
+                    return;
+                }
+            }
+            _uploadQueue!.Complete();
+        }
+        catch (OperationCanceledException)
+        {
+            _uploadQueue!.Abort();
+        }
+        catch (Exception ex)
+        {
+            _uploadQueue!.Fault(new HttpRequestException(
+                "The request content stream failed while being sent.", ex));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    /// <summary>Cleanup after the native completion callback (event-loop
+    /// engine). Runs on the loop thread; must not block it for long.</summary>
+    public void OnMultiFinished()
+    {
+        _uploadQueue?.Abort(); // stop the pump if still running
+        _callerRegistration.Dispose();
+        if (_selfHandle.IsAllocated)
+        {
+            _selfHandle.Free();
+        }
+        if (_uploadBuffer is not null)
+        {
+            ArrayPool<byte>.Shared.Return(_uploadBuffer);
+            _uploadBuffer = null;
+        }
+        _bodyReadCts?.Dispose();
+    }
+
     /* ---------------- native callback targets (worker thread) ----------- */
 
-    /// <summary>Body chunk from libcurl. Returns 0 to continue, 1 to abort.</summary>
+    /// <summary>Body chunk from libcurl. Returns 0 to continue, 1 to abort,
+    /// 2 to pause (event-loop engine, buffer full).</summary>
     public int OnBodyData(ReadOnlySpan<byte> data)
     {
         if (_cancelRequested)
@@ -194,6 +309,13 @@ internal sealed class CurlRequestContext : IDisposable
         if (_parser.OnBodyStarted())
         {
             PublishResponse();
+        }
+        if (_multiMode)
+        {
+            // Non-blocking: pause the transfer when the buffer is full; the
+            // consumer's drain triggers the unpause via the space-available
+            // callback wired in EnableMultiMode.
+            return BodyQueue.TryWrite(data) ? 0 : 2;
         }
         return BodyQueue.Write(data) ? 0 : 1;
     }
@@ -213,13 +335,39 @@ internal sealed class CurlRequestContext : IDisposable
     }
 
     /// <summary>Request-body pull from libcurl. Returns bytes produced,
-    /// 0 at EOF, -1 to abort.</summary>
+    /// 0 at EOF, -1 to abort, -2 to pause (event-loop engine, no bytes ready).</summary>
     public long OnReadBody(Span<byte> destination)
     {
         if (_cancelRequested)
         {
             return -1;
         }
+        if (_multiMode && _uploadQueue is not null)
+        {
+            // Non-seekable body: non-blocking drain of the pump-fed upload
+            // queue; pause (return -2) when empty.
+            try
+            {
+                int n = _uploadQueue.TryReadUpload(destination);
+                return n == -1 ? -2 : n;
+            }
+            catch (Exception ex)
+            {
+                TrySetCallbackException(ex is HttpRequestException
+                    ? ex
+                    : new HttpRequestException("The request content stream failed while being sent.", ex));
+                return -1;
+            }
+        }
+        // Worker engine, or multi engine with a seekable body (read directly so
+        // libcurl can rewind and resend on an auth/redirect). Seekable managed
+        // bodies (MemoryStream-backed content) complete synchronously, so this
+        // does not block the loop thread in practice.
+        return ReadBodyDirect(destination);
+    }
+
+    private long ReadBodyDirect(Span<byte> destination)
+    {
         Stream? stream = _requestBodyStream;
         if (stream is null)
         {
@@ -227,7 +375,7 @@ internal sealed class CurlRequestContext : IDisposable
         }
         // One buffer reused across all read callbacks for this request (curl
         // asks for the same upload-buffer size each time), rather than a
-        // rent/return per callback. Returned in OnWorkerFinished.
+        // rent/return per callback. Returned in OnWorkerFinished/OnMultiFinished.
         if (_uploadBuffer is null || _uploadBuffer.Length < destination.Length)
         {
             if (_uploadBuffer is not null)
@@ -238,7 +386,7 @@ internal sealed class CurlRequestContext : IDisposable
         }
         try
         {
-            // Async read blocked on this dedicated worker thread: correct for
+            // Async read blocked on this dedicated thread: correct for
             // async-only streams (e.g. ASP.NET request bodies with
             // AllowSynchronousIO=false) and wakeable through _bodyReadCts. The
             // fast path avoids a Task allocation when the stream (e.g. a
@@ -302,6 +450,23 @@ internal sealed class CurlRequestContext : IDisposable
     /* ---------------- completion (worker thread) ---------------- */
 
     /// <summary>Called once when the blocking send returns.</summary>
+    /// <summary>Completion entry point for the event-loop engine, invoked from
+    /// the native on_complete callback on the loop thread. Reads the request's
+    /// error/effective-url, completes the transfer, and cleans up.</summary>
+    public void CompleteFromNative(CurlBridgeResult result, in BridgeResponseInfoNative info)
+    {
+        string nativeError = result == CurlBridgeResult.Ok || _multiRequestHandle is null
+            ? string.Empty
+            : NativeMethods.RequestGetLastError(_multiRequestHandle);
+        string effectiveUrl = _multiRequestHandle is null
+            ? string.Empty
+            : NativeMethods.RequestGetEffectiveUrl(_multiRequestHandle);
+
+        CompleteTransfer(result, in info, nativeError, effectiveUrl);
+        OnMultiFinished();
+        OnFinished?.Invoke(); // dispatcher: release slots + dispose the request handle
+    }
+
     public void CompleteTransfer(
         CurlBridgeResult result,
         in BridgeResponseInfoNative info,

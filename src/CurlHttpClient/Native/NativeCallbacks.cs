@@ -95,7 +95,23 @@ internal static unsafe class NativeCallbacks
         }
     }
 
-    internal static BridgeCallbacksNative Create(IntPtr contextHandle, bool hasBody, bool verbose)
+    /// <summary>Event-loop completion: invoked on the loop thread when a
+    /// submitted request finishes.</summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    internal static void OnComplete(void* context, int result, BridgeResponseInfoNative* info)
+    {
+        try
+        {
+            FromContext(context).CompleteFromNative((CurlBridgeResult)result, *info);
+        }
+        catch
+        {
+            // Completion must never throw across the native boundary.
+        }
+    }
+
+    internal static BridgeCallbacksNative Create(
+        IntPtr contextHandle, bool hasBody, bool verbose, bool multi = false)
     {
         return new BridgeCallbacksNative
         {
@@ -106,6 +122,7 @@ internal static unsafe class NativeCallbacks
             OnReadBody = hasBody ? &OnReadBody : null,
             OnSeekBody = hasBody ? &OnSeekBody : null,
             OnDebug = verbose ? &OnDebug : null,
+            OnComplete = multi ? &OnComplete : null,
         };
     }
 }
