@@ -128,12 +128,19 @@ jobs:
         run: |
           $key = "${{ steps.login.outputs.NUGET_API_KEY }}"
           $src = "https://api.nuget.org/v3/index.json"
-          # Push the base package first (CurlHttpClient.DependencyInjection
-          # depends on it). Each .nupkg push also uploads its sibling .snupkg.
-          $base = Get-ChildItem artifacts/CurlHttpClient.*.nupkg |
-                  Where-Object { $_.Name -notlike '*DependencyInjection*' }
-          dotnet nuget push $base.FullName --api-key $key --source $src --skip-duplicate
-          dotnet nuget push artifacts/CurlHttpClient.DependencyInjection.*.nupkg --api-key $key --source $src --skip-duplicate
+          $pkgs = Get-ChildItem artifacts -Filter *.nupkg
+          $base = $pkgs | Where-Object { $_.Name -notlike '*DependencyInjection*' }
+          $di   = $pkgs | Where-Object { $_.Name -like  '*DependencyInjection*' }
+          # Push the base package first (the DI package depends on it). Pass a
+          # resolved full path — dotnet nuget push does not expand wildcards.
+          # Each .nupkg push also uploads its sibling .snupkg; --skip-duplicate
+          # makes an already-published version a no-op instead of an error.
+          foreach ($p in @($base) + @($di)) {
+            if (-not $p) { continue }
+            Write-Host "Pushing $($p.Name)"
+            dotnet nuget push $p.FullName --api-key $key --source $src --skip-duplicate
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
 
       - name: Create GitHub Release
         if: ${{ startsWith(github.ref, 'refs/tags/') && github.event.inputs.dry_run != 'true' }}
