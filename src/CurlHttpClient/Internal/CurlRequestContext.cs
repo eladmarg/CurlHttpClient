@@ -46,6 +46,7 @@ internal sealed class CurlRequestContext : IDisposable
     private BoundedByteQueue? _uploadQueue;
     private Task? _uploadPump;
 
+    private int _resourcesReleased;
     private volatile Exception? _callbackException;
     private volatile bool _cancelRequested;
     private volatile bool _callerTokenTriggered;
@@ -282,8 +283,33 @@ internal sealed class CurlRequestContext : IDisposable
     /// engine). Runs on the loop thread; must not block it for long.</summary>
     public void OnMultiFinished()
     {
-        _uploadQueue?.Abort(); // stop the pump if still running
+        _uploadQueue?.Abort(); // wake a pump blocked writing to a full queue
+        ReleasePerRequestResources();
+    }
+
+    /// <summary>Frees the per-request GCHandle, pooled upload buffer, body-read
+    /// CTS and caller registration exactly once, no matter how many completion
+    /// paths reach it. The event-loop and worker engines free on different
+    /// threads (loop thread vs the SendAsync continuation on a pre-header
+    /// failure), so this must be race-safe: an unfenced double free could
+    /// release a GCHandle slot already reallocated to another live request or
+    /// return one pooled array to two owners.</summary>
+    private void ReleasePerRequestResources()
+    {
+        if (Interlocked.Exchange(ref _resourcesReleased, 1) != 0)
+        {
+            return;
+        }
         _callerRegistration.Dispose();
+        // Cancel (not just dispose) so an upload pump parked in the content
+        // stream's ReadAsync is interrupted rather than orphaned.
+        try
+        {
+            _bodyReadCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
         if (_selfHandle.IsAllocated)
         {
             _selfHandle.Free();
@@ -551,23 +577,14 @@ internal sealed class CurlRequestContext : IDisposable
         BodyQueue.Fault(exception);
     }
 
-    /// <summary>Cleanup after the worker is fully done with native resources.</summary>
+    /// <summary>Cleanup after the worker is fully done with native resources,
+    /// or on the SendAsync path when the request was never dispatched.</summary>
     public void OnWorkerFinished()
     {
-        _callerRegistration.Dispose();
-        if (_selfHandle.IsAllocated)
-        {
-            _selfHandle.Free();
-        }
-        if (_uploadBuffer is not null)
-        {
-            ArrayPool<byte>.Shared.Return(_uploadBuffer);
-            _uploadBuffer = null;
-        }
+        ReleasePerRequestResources();
         CurlBridgeRequestHandle? native = _nativeRequest;
         _nativeRequest = null;
         native?.Dispose();
-        _bodyReadCts?.Dispose();
     }
 
     /* ---------------- response assembly ---------------- */

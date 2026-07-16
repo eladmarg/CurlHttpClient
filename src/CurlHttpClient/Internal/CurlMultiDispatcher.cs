@@ -102,20 +102,38 @@ internal sealed class CurlMultiDispatcher : ICurlDispatcher
             CurlBridgeResult submit = NativeMethods.MultiSubmit(_client, request);
             if (submit != CurlBridgeResult.Ok)
             {
+                // on_complete will not fire; cleanup stays with SendAsync.
                 throw new HttpRequestException(
                     $"Failed to submit the request to the event loop: {submit}.");
             }
-            // If the caller cancelled during setup, propagate it to the loop.
-            if (context.CancelRequested)
-            {
-                NativeMethods.MultiCancel(_client, request);
-            }
 
-            slotAcquired = false; // ownership passed to OnFinished
+            // Ownership of the admission slots and the request handle has passed
+            // to OnFinished (it fires on native completion). Transfer it BEFORE
+            // anything that can throw, so the finally cannot double-release a
+            // slot that OnFinished already released.
+            slotAcquired = false;
             originAcquired = false;
             request = null;
 
-            await context.ResponseTask.ConfigureAwait(false);
+            // If the caller cancelled during setup, nudge the loop. A fast
+            // completion may already have disposed the handle via OnFinished —
+            // tolerate that; the transfer is finishing regardless.
+            if (context.CancelRequested)
+            {
+                try
+                {
+                    NativeMethods.MultiCancel(_client, owned);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
+
+            // Do NOT await ResponseTask here: SendAsync awaits it and marks the
+            // request dispatched, so its finally skips the worker-cleanup path.
+            // Awaiting here would let a pre-header failure fault back into
+            // SendAsync as "not dispatched", running OnWorkerFinished on this
+            // thread concurrently with the loop thread's OnMultiFinished.
         }
         finally
         {
