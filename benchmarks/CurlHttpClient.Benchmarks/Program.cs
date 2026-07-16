@@ -2,11 +2,20 @@ using System.Net;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
 using CurlHttp;
+using CurlHttp.Benchmarks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+// "harness <out.json> [label]" runs the precise latency/allocation harness;
+// anything else runs the BenchmarkDotNet statistical throughput suite.
+if (args.Length > 0 && args[0] == "harness")
+{
+    return await PerfHarness.RunAsync(args);
+}
+
 BenchmarkRunner.Run<HandlerBenchmarks>(args: args);
+return 0;
 
 /// <summary>
 /// CurlHttpMessageHandler vs SocketsHttpHandler against an in-process Kestrel
