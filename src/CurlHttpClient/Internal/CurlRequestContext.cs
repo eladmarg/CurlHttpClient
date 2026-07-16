@@ -300,7 +300,12 @@ internal sealed class CurlRequestContext : IDisposable
         {
             return;
         }
-        _callerRegistration.Dispose();
+        // Unregister, not Dispose: Dispose() blocks until a concurrently
+        // running callback completes. This cleanup can run on the completion
+        // thread while the caller-token callback (which calls Cancel()) is
+        // still executing on another thread; waiting for it risks a stall.
+        // Cancel() is idempotent, so we do not need to wait for it.
+        _callerRegistration.Unregister();
         // Cancel (not just dispose) so an upload pump parked in the content
         // stream's ReadAsync is interrupted rather than orphaned.
         try

@@ -23,6 +23,9 @@ internal sealed class CurlMultiDispatcher : ICurlDispatcher
     private readonly SemaphoreSlim _slots;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _perOrigin = new();
     private readonly ConcurrentDictionary<CurlRequestContext, byte> _active = new();
+    // Cancelled by Dispose to wake requests parked on admission.
+    private readonly CancellationTokenSource _disposeCts = new();
+    private int _disposeGuard;
     private volatile bool _disposed;
 
     public CurlMultiDispatcher(CurlBridgeMultiClientHandle client, CurlHttpClientOptions options)
@@ -36,17 +39,21 @@ internal sealed class CurlMultiDispatcher : ICurlDispatcher
     public async Task DispatchAsync(
         CurlRequestContext context, NativeRequestPlan plan, CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         SemaphoreSlim? originGate = GetOriginGate(plan.Url);
         bool originAcquired = false, slotAcquired = false;
         CurlBridgeRequestHandle? request = null;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, _disposeCts.Token);
+        CancellationToken admit = linked.Token;
         try
         {
             if (originGate is not null)
             {
-                await originGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                await originGate.WaitAsync(admit).ConfigureAwait(false);
                 originAcquired = true;
             }
-            slotAcquired = await _slots.WaitAsync(_options.WorkerAdmissionTimeout, cancellationToken)
+            slotAcquired = await _slots.WaitAsync(_options.WorkerAdmissionTimeout, admit)
                 .ConfigureAwait(false);
             if (!slotAcquired)
             {
@@ -95,8 +102,14 @@ internal sealed class CurlMultiDispatcher : ICurlDispatcher
             {
                 _active.TryRemove(context, out _);
                 owned.Dispose();
-                _slots.Release();
-                originGate?.Release();
+                // Tolerant: this fires on the loop thread and can run during or
+                // after Dispose. The semaphores are never disposed, so this only
+                // guards a would-be over-release.
+                TryRelease(_slots);
+                if (originGate is not null)
+                {
+                    TryRelease(originGate);
+                }
             };
 
             CurlBridgeResult submit = NativeMethods.MultiSubmit(_client, request);
@@ -135,18 +148,36 @@ internal sealed class CurlMultiDispatcher : ICurlDispatcher
             // SendAsync as "not dispatched", running OnWorkerFinished on this
             // thread concurrently with the loop thread's OnMultiFinished.
         }
+        catch (OperationCanceledException) when (_disposed && !cancellationToken.IsCancellationRequested)
+        {
+            throw new ObjectDisposedException(nameof(CurlHttpMessageHandler));
+        }
         finally
         {
             if (slotAcquired)
             {
-                _slots.Release();
+                TryRelease(_slots);
             }
-            if (originAcquired)
+            if (originAcquired && originGate is not null)
             {
-                originGate?.Release();
+                TryRelease(originGate);
             }
             // Only reached on a pre-submit failure (submit hands ownership off).
             request?.Dispose();
+        }
+    }
+
+    private static void TryRelease(SemaphoreSlim semaphore)
+    {
+        try
+        {
+            semaphore.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (SemaphoreFullException)
+        {
         }
     }
 
@@ -172,11 +203,12 @@ internal sealed class CurlMultiDispatcher : ICurlDispatcher
 
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposeGuard, 1) != 0)
         {
             return;
         }
         _disposed = true;
+        _disposeCts.Cancel(); // wake anyone parked on admission
         // Cancel in-flight transfers; the handler then disposes the native
         // client, whose destroy stops the loop thread and delivers the
         // completion callback (CANCELLED) for everything still queued.
@@ -184,10 +216,9 @@ internal sealed class CurlMultiDispatcher : ICurlDispatcher
         {
             context.Cancel();
         }
-        _slots.Dispose();
-        foreach (SemaphoreSlim gate in _perOrigin.Values)
-        {
-            gate.Dispose();
-        }
+        // _slots and per-origin gates are deliberately NOT disposed: the native
+        // client is destroyed after this, and its loop thread still fires
+        // OnFinished (Release) for draining completions. Disposing the
+        // semaphores here would make those releases throw on the loop thread.
     }
 }

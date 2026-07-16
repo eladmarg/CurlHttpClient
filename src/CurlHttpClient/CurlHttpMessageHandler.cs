@@ -29,6 +29,7 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
     private readonly SafeHandle _nativeClient; // CurlBridgeClientHandle or CurlBridgeMultiClientHandle
     private readonly ICurlDispatcher _dispatcher;
     private readonly string _trustSource;
+    private int _disposeGuard;
     private volatile bool _disposed;
 
     public CurlHttpMessageHandler(CurlHttpClientOptions options, ILogger<CurlHttpMessageHandler>? logger = null)
@@ -403,7 +404,9 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing && !_disposed)
+        // Interlocked guard: two concurrent Dispose calls must not both run the
+        // teardown (double CompleteAdding / double native destroy).
+        if (disposing && Interlocked.Exchange(ref _disposeGuard, 1) == 0)
         {
             _disposed = true;
             // Order matters: stop admission and drain workers/loop first, then

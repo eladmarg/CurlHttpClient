@@ -36,7 +36,11 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _perOrigin = new();
     private readonly List<Thread> _threads = [];
     private readonly object _threadSync = new();
+    // Cancelled by Dispose to wake requests parked on admission (the per-origin
+    // gate has no timeout, so SemaphoreSlim.Dispose alone would strand them).
+    private readonly CancellationTokenSource _disposeCts = new();
     private int _idleThreads;
+    private int _disposeGuard;
     private volatile bool _disposed;
 
     public CurlRequestDispatcher(CurlBridgeClientHandle client, CurlHttpClientOptions options)
@@ -49,16 +53,21 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
     public async Task DispatchAsync(
         CurlRequestContext context, NativeRequestPlan plan, CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         SemaphoreSlim? originGate = GetOriginGate(plan.Url);
         bool originAcquired = false, slotAcquired = false;
+        // Admission waits honor both the caller token and handler disposal.
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, _disposeCts.Token);
+        CancellationToken admit = linked.Token;
         try
         {
             if (originGate is not null)
             {
-                await originGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                await originGate.WaitAsync(admit).ConfigureAwait(false);
                 originAcquired = true;
             }
-            slotAcquired = await _slots.WaitAsync(_options.WorkerAdmissionTimeout, cancellationToken)
+            slotAcquired = await _slots.WaitAsync(_options.WorkerAdmissionTimeout, admit)
                 .ConfigureAwait(false);
             if (!slotAcquired)
             {
@@ -70,12 +79,16 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
             }
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            // Ownership of the slot/origin gate passes to the worker.
+            // Ownership of the slot/origin gate passes to the worker. Release is
+            // tolerant: a straggler's OnFinished can run during/after Dispose.
             context.OnFinished = () =>
             {
                 _active.TryRemove(context, out _);
-                _slots.Release();
-                originGate?.Release();
+                TryRelease(_slots);
+                if (originGate is not null)
+                {
+                    TryRelease(originGate);
+                }
             };
             _active.TryAdd(context, 0);
             EnsureWorkerAvailable();
@@ -83,16 +96,39 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
             slotAcquired = false;
             originAcquired = false;
         }
+        catch (OperationCanceledException) when (_disposed && !cancellationToken.IsCancellationRequested)
+        {
+            // Parked on admission when the handler was disposed (not a caller
+            // cancel): surface as a disposal, not an opaque cancellation.
+            throw new ObjectDisposedException(nameof(CurlHttpMessageHandler));
+        }
         finally
         {
             if (slotAcquired)
             {
-                _slots.Release();
+                TryRelease(_slots);
             }
-            if (originAcquired)
+            if (originAcquired && originGate is not null)
             {
-                originGate?.Release();
+                TryRelease(originGate);
             }
+        }
+    }
+
+    /// <summary>Releases a semaphore, tolerating a race with Dispose. The
+    /// semaphores are intentionally never disposed (see Dispose), so this only
+    /// guards against an over-release bug turning into an unhandled throw.</summary>
+    private static void TryRelease(SemaphoreSlim semaphore)
+    {
+        try
+        {
+            semaphore.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (SemaphoreFullException)
+        {
         }
     }
 
@@ -110,13 +146,13 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
 
     private void EnsureWorkerAvailable()
     {
-        if (Volatile.Read(ref _idleThreads) > 0)
+        if (_disposed || Volatile.Read(ref _idleThreads) > 0)
         {
             return;
         }
         lock (_threadSync)
         {
-            if (_threads.Count >= _options.MaxConcurrentRequests)
+            if (_disposed || _threads.Count >= _options.MaxConcurrentRequests)
             {
                 return;
             }
@@ -150,6 +186,15 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
             finally
             {
                 Interlocked.Decrement(ref _idleThreads);
+            }
+
+            // If more work is already queued and no idle worker is left, the
+            // racy idle-check in EnsureWorkerAvailable may have let two
+            // dispatches share this one worker; spin a helper so the backlog
+            // item is not stranded behind this (possibly long-streaming) one.
+            if (_work.Count > 0)
+            {
+                EnsureWorkerAvailable();
             }
 
             RunRequest(item.Context, item.Plan);
@@ -209,8 +254,18 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
         }
         finally
         {
-            context.OnWorkerFinished();
-            context.OnFinished?.Invoke();
+            // This runs on a dedicated (non-ThreadPool) thread with no handler
+            // above it, so an escaping exception would terminate the process.
+            // Cleanup is already exception-safe, but guard defensively.
+            try
+            {
+                context.OnWorkerFinished();
+                context.OnFinished?.Invoke();
+            }
+            catch
+            {
+                // Nothing above can act on it; swallow to keep the worker alive.
+            }
         }
     }
 
@@ -226,11 +281,12 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
     /// the workers so the native client can be destroyed safely.</summary>
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposeGuard, 1) != 0)
         {
             return;
         }
         _disposed = true;
+        _disposeCts.Cancel(); // wake anyone parked on admission
         _work.CompleteAdding();
 
         foreach (CurlRequestContext context in _active.Keys)
@@ -249,11 +305,20 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
             thread.Join(TimeSpan.FromSeconds(10));
         }
 
-        _work.Dispose();
-        _slots.Dispose();
-        foreach (SemaphoreSlim gate in _perOrigin.Values)
+        // Fail any requests still queued but never picked up by a worker (the
+        // worker loop exits on _disposed without draining) so their SendAsync
+        // completes with a cancellation instead of hanging forever.
+        while (_work.TryTake(out (CurlRequestContext Context, NativeRequestPlan Plan) item))
         {
-            gate.Dispose();
+            item.Context.TryFailFastIfCancelled();
+            item.Context.OnFinished?.Invoke();
         }
+
+        _work.Dispose();
+        // _slots and the per-origin gates are deliberately NOT disposed: a
+        // straggler worker that outran the join still calls Release() from its
+        // finally, and disposing here would turn that into an
+        // ObjectDisposedException on a dedicated thread (process crash). They
+        // are small and reclaimed with the handler.
     }
 }
