@@ -38,7 +38,9 @@ target_compile_definitions(curl_http_bridge PRIVATE
 )
 
 if(MSVC)
-    target_compile_options(curl_http_bridge PRIVATE /W4 /permissive- /EHsc /guard:cf)
+    # /WX: the bridge sources are warning-clean at /W4; keep them that way.
+    # vcpkg headers are compiled /external:W0 so they do not trip it.
+    target_compile_options(curl_http_bridge PRIVATE /W4 /WX /permissive- /EHsc /guard:cf)
     target_link_options(curl_http_bridge PRIVATE /guard:cf)
 
     # Opt-in MSVC static analysis (CI/diagnostics only): cmake --preset ...

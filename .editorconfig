@@ -1,0 +1,41 @@
+root = true
+
+# Basic formatting for the whole repo.
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{cs,csproj,props,targets}]
+indent_size = 4
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# C# analyzer posture.
+#
+# TreatWarningsAsErrors is on repo-wide, so any rule raised to `warning` here
+# is build-breaking. The .NET analyzers ship at their default level (the build
+# is clean against it). Rules that the deep review found genuinely valuable for
+# this native-interop codebase are kept visible as suggestions rather than
+# raised to errors, so a full analyzer-as-error rollout can be done as its own
+# mechanical pass without being entangled with the safety fixes. See
+# artifacts/review/modernization.md for the rationale.
+# ---------------------------------------------------------------------------
+[*.cs]
+# Reliability / correctness (high value for interop + IDisposable ownership).
+dotnet_diagnostic.CA2000.severity = suggestion   # dispose objects before losing scope
+dotnet_diagnostic.CA2213.severity = suggestion   # disposable fields disposed
+dotnet_diagnostic.CA2016.severity = suggestion   # forward CancellationToken
+dotnet_diagnostic.CA1063.severity = suggestion   # Dispose pattern
+# Interop.
+dotnet_diagnostic.CA1401.severity = suggestion   # P/Invokes should not be visible
+dotnet_diagnostic.CA2101.severity = suggestion   # marshaling for P/Invoke strings
+
+# Codify the conventions already used in the codebase.
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_prefer_braces = true:suggestion
+dotnet_sort_system_directives_first = true
+csharp_using_directive_placement = outside_namespace:suggestion
