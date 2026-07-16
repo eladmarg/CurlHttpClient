@@ -39,13 +39,21 @@ namespace
                     "managed/native struct mismatch";
             return false;
         }
+        /* struct_size gates access to the appended ca_bundle_path field so an
+         * older caller (smaller struct) still works. */
+        if (o.struct_size >= offsetof(curl_bridge_client_options, ca_bundle_path) +
+                sizeof(o.ca_bundle_path) &&
+            o.ca_bundle_path != nullptr && o.ca_bundle_path[0] != '\0')
+        {
+            c.ca_bundle_path = o.ca_bundle_path;
+        }
         if (o.ca_bundle_pem != nullptr && o.ca_bundle_pem_length > 0)
         {
             c.ca_bundle_pem.assign(o.ca_bundle_pem,
                                    o.ca_bundle_pem + o.ca_bundle_pem_length);
         }
         c.use_native_ca = o.use_native_ca != 0;
-        if (c.ca_bundle_pem.empty() && !c.use_native_ca)
+        if (c.ca_bundle_path.empty() && c.ca_bundle_pem.empty() && !c.use_native_ca)
         {
             error = "no trust source configured: a CA bundle or the native "
                     "certificate store is required (verification cannot be disabled)";

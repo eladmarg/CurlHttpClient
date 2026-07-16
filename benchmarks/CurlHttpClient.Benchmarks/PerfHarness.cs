@@ -33,6 +33,10 @@ public static class PerfHarness
 
         (X509Certificate2 ca, X509Certificate2 leaf) = CreateChain();
         string caBundle = WriteCaBundle(ca);
+        // Production-representative bundle: the test CA (verifies the local
+        // leaf) plus the real ~200 KB Mozilla root set, so the new-connection
+        // scenario reflects the X509-store parse cost the CA-cache fix targets.
+        string realisticBundle = WriteRealisticBundle(ca);
         try
         {
             await using var server = await PerfServer.StartAsync(leaf);
@@ -81,14 +85,14 @@ public static class PerfHarness
             // targets. Separate handler so pool state is clean.
             using (var handler = new CurlHttpMessageHandler(new CurlHttpClientOptions
             {
-                CertificateAuthorityBundlePath = caBundle,
+                CertificateAuthorityBundlePath = realisticBundle,
             }))
             using (var client = new HttpClient(handler))
             {
                 await Warmup(client, server);
                 results.Add(await MeasureAsync("new-connection-https-get", 400,
                     () => GetDiscardAsync(client, server.HttpsClose),
-                    "fresh TLS handshake per request (server closes) — CA-parse sensitive"));
+                    "fresh TLS handshake per request (server closes), ~200 KB CA bundle — CA-parse sensitive"));
             }
 
             // Cancellation latency: time from Cancel() to observed abort.
@@ -132,6 +136,7 @@ public static class PerfHarness
             ca.Dispose();
             leaf.Dispose();
             File.Delete(caBundle);
+            File.Delete(realisticBundle);
         }
     }
 
@@ -291,6 +296,29 @@ public static class PerfHarness
     {
         string path = Path.Combine(Path.GetTempPath(), $"perf-ca-{Guid.NewGuid():N}.pem");
         File.WriteAllText(path, ca.ExportCertificatePem());
+        return path;
+    }
+
+    /// <summary>Test CA + the vendored Mozilla cacert.pem, so the parsed store
+    /// is production-sized (~150 certs). The local leaf still verifies via the
+    /// test CA; the extra roots only enlarge the parse.</summary>
+    private static string WriteRealisticBundle(X509Certificate2 ca)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"perf-ca-real-{Guid.NewGuid():N}.pem");
+        var sb = new System.Text.StringBuilder(ca.ExportCertificatePem()).AppendLine();
+
+        // Locate the vendored bundle relative to the repo.
+        string? dir = AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "native", "cacert.pem")))
+        {
+            dir = Path.GetDirectoryName(dir);
+        }
+        string? mozilla = dir is null ? null : Path.Combine(dir, "native", "cacert.pem");
+        if (mozilla is not null && File.Exists(mozilla))
+        {
+            sb.Append(File.ReadAllText(mozilla));
+        }
+        File.WriteAllText(path, sb.ToString());
         return path;
     }
 }

@@ -19,6 +19,7 @@ namespace bridge
     struct ClientConfig
     {
         std::vector<uint8_t> ca_bundle_pem;
+        std::string ca_bundle_path;
         bool use_native_ca = false;
         int min_tls_version = CURL_BRIDGE_TLS_DEFAULT;
         std::string tls12_cipher_list;

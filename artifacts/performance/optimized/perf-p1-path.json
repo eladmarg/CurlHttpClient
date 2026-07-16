@@ -1,0 +1,99 @@
+{
+  "label": "p1-path",
+  "capturedUtc": "2026-07-16T05:46:38.961528Z",
+  "runtime": ".NET 10.0.10",
+  "os": "Microsoft Windows 10.0.26200",
+  "gcServer": true,
+  "results": [
+    {
+      "Name": "small-reused-get-http",
+      "Iterations": 5000,
+      "MedianUs": 198.4,
+      "P95Us": 279.3,
+      "P99Us": 336.1,
+      "AllocBytesPerOp": 566,
+      "Notes": "keep-alive reused connection, plain HTTP"
+    },
+    {
+      "Name": "small-reused-get-https",
+      "Iterations": 5000,
+      "MedianUs": 205.4,
+      "P95Us": 277.9,
+      "P99Us": 335.5,
+      "AllocBytesPerOp": 740,
+      "Notes": "keep-alive reused TLS connection"
+    },
+    {
+      "Name": "ttfb-headers-read",
+      "Iterations": 3000,
+      "MedianUs": 211.2,
+      "P95Us": 272.6,
+      "P99Us": 343.3,
+      "AllocBytesPerOp": 629,
+      "Notes": "ResponseHeadersRead, time to headers"
+    },
+    {
+      "Name": "small-json-post",
+      "Iterations": 3000,
+      "MedianUs": 227.1,
+      "P95Us": 304.7,
+      "P99Us": 374.9,
+      "AllocBytesPerOp": 698,
+      "Notes": "small JSON POST round-trip"
+    },
+    {
+      "Name": "sync-send-get",
+      "Iterations": 3000,
+      "MedianUs": 192,
+      "P95Us": 319.5,
+      "P99Us": 1752.2,
+      "AllocBytesPerOp": 264093,
+      "Notes": "synchronous HttpClient.Send \u002B buffered read"
+    },
+    {
+      "Name": "download-32mb",
+      "Iterations": 20,
+      "MedianUs": 35174.4,
+      "P95Us": 39491.5,
+      "P99Us": 39491.5,
+      "AllocBytesPerOp": -607214,
+      "Notes": "streamed 32 MB download, alloc/op includes body pipeline"
+    },
+    {
+      "Name": "upload-8mb",
+      "Iterations": 30,
+      "MedianUs": 7735.3,
+      "P95Us": 20806.9,
+      "P99Us": 22227.7,
+      "AllocBytesPerOp": 562001,
+      "Notes": "streamed 8 MB upload"
+    },
+    {
+      "Name": "new-connection-https-get",
+      "Iterations": 400,
+      "MedianUs": 2434.8,
+      "P95Us": 3052.6,
+      "P99Us": 3289.1,
+      "AllocBytesPerOp": -45813,
+      "Notes": "fresh TLS handshake per request (server closes), ~200 KB CA bundle \u2014 CA-parse sensitive"
+    },
+    {
+      "Name": "cancellation-latency",
+      "Iterations": 100,
+      "MedianUs": 977936,
+      "P95Us": 984238.3,
+      "P99Us": 985562.5,
+      "AllocBytesPerOp": 0,
+      "Notes": "time from Cancel() to observed abort during header wait"
+    },
+    {
+      "Name": "handler-create-dispose",
+      "Iterations": 200,
+      "MedianUs": 143.1,
+      "P95Us": 203.8,
+      "P99Us": 228,
+      "AllocBytesPerOp": 13712,
+      "Notes": "native client create \u002B dispose"
+    }
+  ]
+}

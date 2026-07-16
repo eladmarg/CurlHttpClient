@@ -224,7 +224,15 @@ namespace
         /* TLS. Verification is unconditional. */
         ok = ok && set(CURLOPT_SSL_VERIFYPEER, 1L);
         ok = ok && set(CURLOPT_SSL_VERIFYHOST, 2L);
-        if (!cfg.ca_bundle_pem.empty())
+        if (!cfg.ca_bundle_path.empty())
+        {
+            /* Path (not blob): lets OpenSSL cache the parsed X509 store across
+             * new connections (CURLOPT_CA_CACHE_TIMEOUT default 24 h). The
+             * blob form disables that cache and re-parses the ~200 KB bundle
+             * on every TLS handshake. */
+            ok = ok && set(CURLOPT_CAINFO, cfg.ca_bundle_path.c_str());
+        }
+        else if (!cfg.ca_bundle_pem.empty())
         {
             curl_blob blob;
             blob.data = const_cast<uint8_t*>(cfg.ca_bundle_pem.data());

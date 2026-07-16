@@ -65,6 +65,10 @@ internal struct BridgeClientOptionsNative
     public int MaxEasyHandles;
     public long ConnectionIdleTimeoutSecs;
     public long ConnectionMaxLifetimeSecs;
+
+    /// <summary>CA bundle file path (preferred over <see cref="CaBundlePem"/>;
+    /// enables OpenSSL's cross-connection X509-store cache).</summary>
+    public IntPtr CaBundlePath;
 }
 
 /// <summary>Mirror of <c>curl_bridge_callbacks</c>.</summary>

@@ -184,6 +184,13 @@ typedef struct curl_bridge_client_options
     int32_t max_easy_handles;          /* soft pre-allocation hint; pool grows on demand */
     int64_t connection_idle_timeout_secs;   /* 0 => libcurl default (118 s) */
     int64_t connection_max_lifetime_secs;   /* 0 => unlimited */
+
+    /* CA bundle FILE path. Strongly preferred over ca_bundle_pem: passing a
+     * path lets OpenSSL cache the parsed X509 store across connections
+     * (CURLOPT_CA_CACHE_TIMEOUT, 24 h), whereas CURLOPT_CAINFO_BLOB disables
+     * that cache and re-parses the bundle on every new TLS handshake. When
+     * set (non-NULL, non-empty), the path is used and ca_bundle_pem ignored. */
+    const char* ca_bundle_path;
 } curl_bridge_client_options;
 
 /* ------------------------------------------------------------------ */

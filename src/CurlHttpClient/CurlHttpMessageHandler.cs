@@ -78,8 +78,8 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
                 "libcurl lacks the threaded resolver (AsynchDNS); cancellation during connects would hang.");
         }
 
-        byte[] caBundle = LoadCaBundle(out _trustSource);
-        _client = CreateNativeClient(options, caBundle);
+        string? caBundlePath = LoadCaBundle(out _trustSource);
+        _client = CreateNativeClient(options, caBundlePath);
         _dispatcher = new CurlRequestDispatcher(_client, options);
 
         CurlHttpEventSource.Log.HandlerStarted(
@@ -262,12 +262,26 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
 
     /* ------------------------- native client setup ------------------------- */
 
-    private byte[] LoadCaBundle(out string trustSource)
+    /// <summary>Resolves the CA bundle FILE path (not bytes): passing a path
+    /// to libcurl lets OpenSSL cache the parsed X509 store across new
+    /// connections, whereas an in-memory blob is re-parsed on every TLS
+    /// handshake. Returns null when only the Windows store is trusted.</summary>
+    private string? LoadCaBundle(out string trustSource)
     {
         if (_options.CertificateAuthorityBundlePath is { } explicitPath)
         {
-            trustSource = Path.GetFullPath(explicitPath);
-            return File.ReadAllBytes(explicitPath);
+            string full = Path.GetFullPath(explicitPath);
+            // An empty bundle provides no trust source; since verification can
+            // never be disabled, refuse to start rather than pass an empty
+            // file to libcurl (which would only fail later, per connection).
+            if (new FileInfo(full).Length == 0)
+            {
+                throw new CurlHttpInitializationException(
+                    $"The configured CA bundle '{full}' is empty — no trust source is available " +
+                    "and certificate verification cannot be disabled, so the handler refuses to start.");
+            }
+            trustSource = full;
+            return full;
         }
 
         // Default: the cacert.pem deployed beside the native bridge.
@@ -280,14 +294,14 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
                 trustSource = _options.UseSystemCertificateStore
                     ? bundled + " + windows certificate store"
                     : bundled;
-                return File.ReadAllBytes(bundled);
+                return bundled;
             }
         }
 
         if (_options.UseSystemCertificateStore)
         {
             trustSource = "windows certificate store";
-            return [];
+            return null;
         }
 
         throw new CurlHttpInitializationException(
@@ -297,8 +311,16 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
             "so the handler refuses to start.");
     }
 
+    /// <summary>Escape hatch: when the CURLHTTP_CA_BLOB environment variable
+    /// is "1", the CA bundle is passed to libcurl as an in-memory blob rather
+    /// than a file path. This disables OpenSSL's cross-connection X509-store
+    /// cache (slower new connections) and exists only as a diagnostic/measure
+    /// tool and a fallback should a future libcurl regress path caching.</summary>
+    private static bool UseCaBlob =>
+        Environment.GetEnvironmentVariable("CURLHTTP_CA_BLOB") == "1";
+
     private static unsafe CurlBridgeClientHandle CreateNativeClient(
-        CurlHttpClientOptions options, byte[] caBundle)
+        CurlHttpClientOptions options, string? caBundlePath)
     {
         var strings = new List<IntPtr>();
         IntPtr Utf8(string? value)
@@ -312,15 +334,19 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
             return ptr;
         }
 
-        fixed (byte* caPtr = caBundle)
+        byte[] caBlob = UseCaBlob && caBundlePath is not null
+            ? File.ReadAllBytes(caBundlePath)
+            : [];
+        fixed (byte* caPtr = caBlob)
         {
             try
             {
                 var native = new BridgeClientOptionsNative
                 {
                     StructSize = (uint)Marshal.SizeOf<BridgeClientOptionsNative>(),
+                    CaBundlePath = UseCaBlob ? IntPtr.Zero : Utf8(caBundlePath),
                     CaBundlePem = (IntPtr)caPtr,
-                    CaBundlePemLength = (ulong)caBundle.Length,
+                    CaBundlePemLength = (ulong)caBlob.Length,
                     UseNativeCa = options.UseSystemCertificateStore ? 1 : 0,
                     MinTlsVersion = options.MinimumTlsVersion?.Minor == 3 ? 13 : 12,
                     Tls12CipherList = Utf8(options.Tls12CipherList),
