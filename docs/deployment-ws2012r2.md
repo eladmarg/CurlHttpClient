@@ -4,7 +4,10 @@
 
 The **native** layer (curl_http_bridge.dll) targets the 6.3 kernel and is
 fully compatible with Server 2012 R2 (v142 toolset, static CRT, Win 8.1-only
-imports — build-gated).
+imports — build-gated). The opt-in `MultiEventLoop` engine adds a native loop
+thread (`std::thread`/`std::mutex`, statically linked) and no new OS imports:
+the import gate on the rebuilt DLL still shows only the Win 8.1-floor system
+DLLs, so the on-target checklist below is unchanged for either engine.
 
 The **managed** layer targets **.NET 10, which Microsoft does not support on
 Windows Server 2012 R2** (the last supported release was .NET 8). This was an
