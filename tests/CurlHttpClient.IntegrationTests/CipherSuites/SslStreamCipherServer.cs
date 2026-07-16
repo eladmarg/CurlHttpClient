@@ -19,15 +19,22 @@ internal sealed class SslStreamCipherServer : IDisposable
     private readonly TcpListener _listener;
     private readonly X509Certificate2 _certificate;
     private readonly SslProtocols _protocols;
+    private readonly Func<SslStream, string> _responseBody;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _acceptLoop;
 
     public Uri BaseUri { get; }
 
-    public SslStreamCipherServer(X509Certificate2 certificate, SslProtocols protocols)
+    /// <param name="responseBody">Produces the response body from the
+    /// negotiated stream. Defaults to the negotiated cipher-suite name (the
+    /// evidence the cipher tests assert on); certificate/validation tests
+    /// pass a fixed body since the handshake outcome is the assertion.</param>
+    public SslStreamCipherServer(X509Certificate2 certificate, SslProtocols protocols,
+        Func<SslStream, string>? responseBody = null)
     {
         _certificate = certificate;
         _protocols = protocols;
+        _responseBody = responseBody ?? (ssl => ssl.NegotiatedCipherSuite.ToString());
         _listener = new TcpListener(IPAddress.Loopback, 0);
         _listener.Start();
         BaseUri = new Uri($"https://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/");
@@ -78,8 +85,7 @@ internal sealed class SslStreamCipherServer : IDisposable
                     head.Append(Encoding.ASCII.GetString(buffer, 0, read));
                 }
 
-                string body = ssl.NegotiatedCipherSuite.ToString();
-                byte[] payload = Encoding.ASCII.GetBytes(body);
+                byte[] payload = Encoding.ASCII.GetBytes(_responseBody(ssl));
                 byte[] response = Encoding.ASCII.GetBytes(
                     "HTTP/1.1 200 OK\r\n" +
                     "Content-Type: text/plain\r\n" +

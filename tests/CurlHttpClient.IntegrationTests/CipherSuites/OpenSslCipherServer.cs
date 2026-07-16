@@ -73,10 +73,12 @@ internal sealed class OpenSslCipherServer : IDisposable
     private static OpenSslCipherServer StartOnce(
         string certPemPath, string keyPemPath, bool tls13, string cipher)
     {
+        // Called from Start(), which already owns the port-steal retry loop —
+        // delegate to the single-attempt launcher so retries don't nest.
         string protocolArgs = tls13
             ? $"-tls1_3 -ciphersuites \"{cipher}\""
             : $"-tls1_2 -cipher \"{cipher}\"";
-        return StartWithArgs(certPemPath, keyPemPath, protocolArgs);
+        return StartWithArgsOnce(certPemPath, keyPemPath, protocolArgs);
     }
 
     /// <summary>Full-control launcher for the TLS matrices: caller supplies

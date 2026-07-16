@@ -133,7 +133,7 @@ public sealed class ManagedProxyServer : IDisposable
                 }
                 else
                 {
-                    await ForwardAsync(stream, requestLine, head, leftover, lines);
+                    await ForwardAsync(stream, requestLine, leftover, lines);
                 }
             }
         }
@@ -173,7 +173,7 @@ public sealed class ManagedProxyServer : IDisposable
 
     /// <summary>Plain-HTTP forwarding of an absolute-form request.</summary>
     private async Task ForwardAsync(NetworkStream client, string requestLine,
-        string head, byte[] leftover, string[] headerLines)
+        byte[] leftover, string[] headerLines)
     {
         string[] parts = requestLine.Split(' ');
         var target = new Uri(parts[1]); // absolute-form URI

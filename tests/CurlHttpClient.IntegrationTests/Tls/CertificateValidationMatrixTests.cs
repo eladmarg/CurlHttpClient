@@ -1,5 +1,5 @@
 using System.Net;
-using System.Net.Security;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using CurlHttp.IntegrationTests.CipherSuites;
@@ -63,31 +63,27 @@ public class CertificateValidationMatrixTests
         return (ca, leaf);
     }
 
-    private static string WriteCaBundle(params X509Certificate2[] certs)
-    {
-        string path = Path.Combine(Path.GetTempPath(), $"certmatrix-{Guid.NewGuid():N}.pem");
-        File.WriteAllText(path, string.Join("\n", certs.Select(c => c.ExportCertificatePem())));
-        return path;
-    }
-
     private static async Task<HttpResponseMessage> RequestAsync(
         X509Certificate2 serverCert, string caBundlePath, string host = "localhost")
     {
-        using var server = new SslStreamCertServer(serverCert);
+        // The handshake outcome is the assertion, so a fixed "ok" body
+        // suffices (vs. the cipher tests, which report the negotiated suite).
+        using var server = new SslStreamCipherServer(serverCert,
+            SslProtocols.Tls12 | SslProtocols.Tls13, _ => "ok");
         using var handler = new CurlHttpMessageHandler(new CurlHttpClientOptions
         {
             CertificateAuthorityBundlePath = caBundlePath,
             ConnectTimeout = TimeSpan.FromSeconds(10),
         });
         using var client = new HttpClient(handler);
-        return await client.GetAsync(new Uri($"https://{host}:{server.Port}/"));
+        return await client.GetAsync(new Uri($"https://{host}:{server.BaseUri.Port}/"));
     }
 
     [Fact]
     public async Task TrustedChain_CorrectHostname_Succeeds()
     {
         (X509Certificate2 ca, X509Certificate2 leaf) = MakeChain();
-        string bundle = WriteCaBundle(ca);
+        string bundle = TestCertificates.WriteCaBundle(ca);
         try
         {
             using HttpResponseMessage response = await RequestAsync(leaf, bundle);
@@ -106,7 +102,7 @@ public class CertificateValidationMatrixTests
     {
         (X509Certificate2 ca, X509Certificate2 leaf) = MakeChain();
         (X509Certificate2 otherCa, X509Certificate2 _) = MakeChain();
-        string bundle = WriteCaBundle(otherCa); // does not contain leaf's issuer
+        string bundle = TestCertificates.WriteCaBundle(otherCa); // does not contain leaf's issuer
         try
         {
             await AssertSecureFailure(leaf, bundle);
@@ -124,7 +120,7 @@ public class CertificateValidationMatrixTests
     public async Task HostnameMismatch_IsRejected()
     {
         (X509Certificate2 ca, X509Certificate2 leaf) = MakeChain(sans: ["other.example"]);
-        string bundle = WriteCaBundle(ca);
+        string bundle = TestCertificates.WriteCaBundle(ca);
         try
         {
             await AssertSecureFailure(leaf, bundle, host: "127.0.0.1");
@@ -143,7 +139,7 @@ public class CertificateValidationMatrixTests
         DateTimeOffset now = DateTimeOffset.UtcNow;
         (X509Certificate2 ca, X509Certificate2 leaf) = MakeChain(
             leafNotBefore: now.AddDays(-10), leafNotAfter: now.AddDays(-1));
-        string bundle = WriteCaBundle(ca);
+        string bundle = TestCertificates.WriteCaBundle(ca);
         try
         {
             await AssertSecureFailure(leaf, bundle);
@@ -162,7 +158,7 @@ public class CertificateValidationMatrixTests
         DateTimeOffset now = DateTimeOffset.UtcNow;
         (X509Certificate2 ca, X509Certificate2 leaf) = MakeChain(
             leafNotBefore: now.AddDays(2), leafNotAfter: now.AddDays(10));
-        string bundle = WriteCaBundle(ca);
+        string bundle = TestCertificates.WriteCaBundle(ca);
         try
         {
             await AssertSecureFailure(leaf, bundle);
@@ -191,7 +187,7 @@ public class CertificateValidationMatrixTests
             req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
                 [new Oid("1.3.6.1.5.5.7.3.2")], false)); // clientAuth
         });
-        string bundle = WriteCaBundle(ca);
+        string bundle = TestCertificates.WriteCaBundle(ca);
         try
         {
             // OpenSSL with default purpose checking rejects a server cert
@@ -211,7 +207,7 @@ public class CertificateValidationMatrixTests
     {
         (X509Certificate2 ca, X509Certificate2 leaf) = MakeChain(
             leafCn: "127.0.0.1", sans: ["127.0.0.1"]);
-        string bundle = WriteCaBundle(ca);
+        string bundle = TestCertificates.WriteCaBundle(ca);
         try
         {
             using HttpResponseMessage response = await RequestAsync(leaf, bundle, host: "127.0.0.1");
@@ -255,7 +251,7 @@ public class CertificateValidationMatrixTests
         (X509Certificate2 ca1, X509Certificate2 _) = MakeChain();
         (X509Certificate2 ca2, X509Certificate2 leaf2) = MakeChain();
         (X509Certificate2 ca3, X509Certificate2 _) = MakeChain();
-        string bundle = WriteCaBundle(ca1, ca2, ca3); // leaf2's issuer is in the middle
+        string bundle = TestCertificates.WriteCaBundle(ca1, ca2, ca3); // leaf2's issuer is in the middle
         try
         {
             using HttpResponseMessage response = await RequestAsync(leaf2, bundle);
@@ -286,86 +282,5 @@ public class CertificateValidationMatrixTests
         HttpRequestException ex = await Assert.ThrowsAsync<HttpRequestException>(
             () => RequestAsync(serverCert, caBundlePath, host));
         Assert.Equal(HttpRequestError.SecureConnectionError, ex.HttpRequestError);
-    }
-
-    /// <summary>Minimal always-TLS1.2/1.3 SslStream server presenting one cert.</summary>
-    private sealed class SslStreamCertServer : IDisposable
-    {
-        private readonly System.Net.Sockets.TcpListener _listener;
-        private readonly CancellationTokenSource _cts = new();
-        private readonly Task _loop;
-
-        public int Port { get; }
-
-        public SslStreamCertServer(X509Certificate2 certificate)
-        {
-            _listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-            _listener.Start();
-            Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
-            _loop = Task.Run(async () =>
-            {
-                while (!_cts.IsCancellationRequested)
-                {
-                    System.Net.Sockets.TcpClient client;
-                    try
-                    {
-                        client = await _listener.AcceptTcpClientAsync(_cts.Token);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        return;
-                    }
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            using (client)
-                            await using (var ssl = new SslStream(client.GetStream()))
-                            {
-                                await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
-                                {
-                                    ServerCertificate = certificate,
-                                    EnabledSslProtocols =
-                                        System.Security.Authentication.SslProtocols.Tls12 |
-                                        System.Security.Authentication.SslProtocols.Tls13,
-                                }, _cts.Token);
-                                byte[] buffer = new byte[4096];
-                                var head = new System.Text.StringBuilder();
-                                while (!head.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
-                                {
-                                    int read = await ssl.ReadAsync(buffer, _cts.Token);
-                                    if (read == 0)
-                                    {
-                                        return;
-                                    }
-                                    head.Append(System.Text.Encoding.ASCII.GetString(buffer, 0, read));
-                                }
-                                await ssl.WriteAsync(System.Text.Encoding.ASCII.GetBytes(
-                                    "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok"),
-                                    _cts.Token);
-                            }
-                        }
-                        catch
-                        {
-                            // handshake rejection is a valid outcome
-                        }
-                    });
-                }
-            });
-        }
-
-        public void Dispose()
-        {
-            _cts.Cancel();
-            _listener.Stop();
-            try
-            {
-                _loop.Wait(TimeSpan.FromSeconds(2));
-            }
-            catch (AggregateException)
-            {
-            }
-            _cts.Dispose();
-        }
     }
 }

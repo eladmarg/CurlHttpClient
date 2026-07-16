@@ -17,16 +17,18 @@ namespace CurlHttp.Internal;
 ///  - 1xx blocks are consumed and discarded.
 ///  - Trailer lines (arriving after the first body byte) are collected
 ///    separately for HttpResponseMessage.TrailingHeaders.
-///  - A completed block is IMMEDIATELY final when nothing can supersede it:
-///    any 2xx/4xx/5xx, or a 3xx when redirects are disabled or without a
-///    Location header. This is what makes ResponseHeadersRead return before
-///    the body arrives.
-///  - A completed 3xx block with a Location header while redirects are
-///    enabled is AMBIGUOUS (libcurl may or may not follow it, e.g. redirect
-///    budget, protocol restrictions). It is parked; the next status line
-///    discards it, and the first body byte or the end of the transfer
-///    promotes it to final. Safe because libcurl never delivers body bytes
-///    for a response it acts on.
+///  - A completed block is IMMEDIATELY final when nothing can supersede it.
+///    This is what makes ResponseHeadersRead return before the body arrives.
+///  - A completed block is an AMBIGUOUS INTERMEDIATE HOP — one libcurl may
+///    itself supersede with a follow-up request — when either:
+///      * it is a 3xx with a Location header and redirects are enabled
+///        (libcurl may or may not follow it, e.g. redirect budget, protocol
+///        restrictions), or
+///      * it is a 407 and proxy credentials are configured (libcurl may retry
+///        with Proxy-Authorization).
+///    An ambiguous block is parked: the next status line discards it, and the
+///    first body byte or the end of the transfer promotes it to final. Safe
+///    because libcurl never delivers body bytes for a response it acts on.
 /// </summary>
 internal sealed class ResponseHeaderParser
 {
@@ -115,26 +117,18 @@ internal sealed class ResponseHeaderParser
                 return false;
             }
 
-            if (_statusCode == 407 && _proxyAuthRetryPossible)
+            if (IsAmbiguousIntermediateBlock(out Uri? redirectTarget))
             {
-                // Proxy credentials are configured: libcurl may retry this
-                // request with Proxy-Authorization, making this block an
-                // intermediate hop. Park it; the next status line discards
-                // it, transfer completion promotes it (final 407).
-                HasFinalBlock = true;
-                return false;
-            }
-
-            if (_statusCode is >= 300 and < 400 && _followRedirects &&
-                TryGetHeader("Location", out string? location))
-            {
-                // Ambiguous: libcurl may follow. Track the prospective URI so
-                // RequestMessage.RequestUri can reflect the final location.
-                if (Uri.TryCreate(_currentUri, location, out Uri? next))
+                // libcurl may supersede this block with a follow-up request.
+                // Park it: the next status line discards it, the first body
+                // byte or transfer completion promotes it to final.
+                if (redirectTarget is not null)
                 {
-                    _currentUri = next;
+                    // Track the prospective URI so RequestMessage.RequestUri
+                    // can reflect the final location.
+                    _currentUri = redirectTarget;
                 }
-                HasFinalBlock = true; // parked; promoted by body/completion
+                HasFinalBlock = true;
                 return false;
             }
 
@@ -164,6 +158,26 @@ internal sealed class ResponseHeaderParser
         }
         _finalized = true;
         return true;
+    }
+
+    /// <summary>True when the just-completed block may be an intermediate hop
+    /// that libcurl will supersede with a follow-up request (a followed
+    /// redirect, or a proxy-auth retry). <paramref name="redirectTarget"/> is
+    /// the resolved Location for the redirect case, else null.</summary>
+    private bool IsAmbiguousIntermediateBlock(out Uri? redirectTarget)
+    {
+        redirectTarget = null;
+
+        if (_statusCode is >= 300 and < 400 && _followRedirects &&
+            TryGetHeader("Location", out string? location))
+        {
+            Uri.TryCreate(_currentUri, location, out redirectTarget);
+            return true;
+        }
+
+        // Proxy credentials configured: libcurl may retry with
+        // Proxy-Authorization and obtain the real response.
+        return _statusCode == 407 && _proxyAuthRetryPossible;
     }
 
     private void ParseStatusLine(string line, int blockStatus)

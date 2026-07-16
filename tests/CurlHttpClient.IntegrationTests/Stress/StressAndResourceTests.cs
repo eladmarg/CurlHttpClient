@@ -41,8 +41,8 @@ public class StressAndResourceTests(ServerFixture fixture, ITestOutputHelper out
                         Assert.Contains("hello", await r.Content.ReadAsStringAsync());
                     }
                     break;
-                case 1: // streaming download, verify exact bytes via hash
-                    await VerifyDownloadAsync(client, 4 * 1024 * 1024, seed: i);
+                case 1: // streaming download, verify byte count
+                    await VerifyDownloadAsync(client, 4 * 1024 * 1024);
                     break;
                 case 2: // streaming upload, server verifies length
                     await VerifyUploadAsync(client, 2 * 1024 * 1024, seed: i);
@@ -233,7 +233,7 @@ public class StressAndResourceTests(ServerFixture fixture, ITestOutputHelper out
         }
     }
 
-    private async Task VerifyDownloadAsync(HttpClient client, int size, int seed)
+    private async Task VerifyDownloadAsync(HttpClient client, int size)
     {
         // /large uses a fixed seed server-side; verify byte count here (the
         // dedicated hash-verified path is exercised by the download test).

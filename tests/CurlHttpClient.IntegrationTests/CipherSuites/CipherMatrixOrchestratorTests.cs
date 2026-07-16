@@ -26,7 +26,7 @@ public class CipherMatrixOrchestratorTests(CipherMaterialFixture fixture, ITestO
         string Name, string StandardName, string Protocol, string KeyExchange,
         string Authentication, int Bits, bool EnabledDefault, string RequiredCert,
         string ExpectedResult, string ActualResult, string NegotiatedCipher,
-        string NegotiatedProtocol, string Classification, string FailureReason);
+        string Classification, string FailureReason);
 
     [SkippableFact]
     public async Task EveryDiscoveredCipher_IsTestedOrClassified_WithZeroSilentSkips()
@@ -111,7 +111,6 @@ public class CipherMatrixOrchestratorTests(CipherMaterialFixture fixture, ITestO
                 ExpectedResult: "Pass",
                 ActualResult: negotiated ? "Pass" : "Fail",
                 NegotiatedCipher: negotiated ? cipher.Name : "",
-                NegotiatedProtocol: cipher.Protocol,
                 Classification: classification.ToString(),
                 FailureReason: negotiated ? "" :
                     $"status={(int)response.StatusCode}; server log tail: " +
@@ -123,7 +122,7 @@ public class CipherMatrixOrchestratorTests(CipherMaterialFixture fixture, ITestO
                 cipher.Name, cipher.StandardName, cipher.Protocol, cipher.KeyExchange,
                 cipher.Authentication, cipher.Bits, cipher.EnabledByDefault,
                 cipher.RequiredCertificate ?? "",
-                "Pass", "Fail", "", cipher.Protocol, classification.ToString(),
+                "Pass", "Fail", "", classification.ToString(),
                 $"{ex.GetType().Name}: {ex.Message}");
         }
         finally
@@ -152,7 +151,6 @@ public class CipherMatrixOrchestratorTests(CipherMaterialFixture fixture, ITestO
             ExpectedResult: "NotApplicable",
             ActualResult: "NotApplicable",
             NegotiatedCipher: "",
-            NegotiatedProtocol: "",
             Classification: classification.ToString(),
             FailureReason: reason);
     }

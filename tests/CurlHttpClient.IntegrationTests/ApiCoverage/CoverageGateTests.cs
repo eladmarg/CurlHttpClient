@@ -13,9 +13,9 @@ namespace CurlHttp.IntegrationTests.ApiCoverage;
 ///  2. Every [ApiCoverage] attribute must reference a real baseline entry
 ///     (typo protection) — enforcing.
 ///  3. Every baseline entry classified "Direct" must be referenced by at
-///     least one executable test — report-only until the matrices land,
-///     enforced when CURLHTTP_ENFORCE_COVERAGE=1 (flipped on in run-coverage
-///     scripts/CI).
+///     least one executable test — enforcing by default; set
+///     CURLHTTP_ENFORCE_COVERAGE=0 to relax to report-only while adding a
+///     batch of new APIs mid-development.
 /// Always emits artifacts/compatibility/httpclient-api-coverage.md.
 /// </summary>
 public class CoverageGateTests
