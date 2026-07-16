@@ -1,0 +1,134 @@
+name: Publish to NuGet
+
+# Builds the self-contained native bridge, packs both packages, and publishes
+# them to NuGet.org using Trusted Publishing (OIDC) — no long-lived API key is
+# stored in the repo. Register this workflow file (publish.yml) as the trusted
+# publisher on nuget.org for both package ids, and set a repository variable
+# NUGET_USER to your nuget.org username.
+#
+# Trigger: pushing a version tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`),
+# or manually via the Actions tab (with an optional version / dry-run).
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version (e.g. 1.0.0). Blank = use the csproj version."
+        required: false
+      dry_run:
+        description: "Pack only; do not push to NuGet."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # required for NuGet Trusted Publishing (OIDC)
+
+concurrency:
+  group: publish-nuget
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+  VCPKG_BASELINE: cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+
+jobs:
+  publish:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install MSVC v142 toolset (WS2012R2-compatible)
+        shell: pwsh
+        run: |
+          # windows-2022 ships VS2022; add the v142 toolset used for the
+          # WS2012R2-compatible static build.
+          $vsInstaller = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe"
+          $args = @("modify","--quiet","--norestart","--installPath",
+            "C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
+            "--add","Microsoft.VisualStudio.Component.VC.v142.x86.x64")
+          Start-Process -FilePath $vsInstaller -ArgumentList $args -Wait
+
+      - name: Cache vcpkg binary artifacts
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ env.VCPKG_BASELINE }}-${{ hashFiles('native/vcpkg.json') }}
+
+      - name: Build native bridge (libcurl + OpenSSL, static)
+        shell: cmd
+        run: build\build-native-x64.cmd
+
+      - name: Native ABI contract test
+        shell: cmd
+        run: native\CurlBridge\out\build\x64-windows-static-v142\curl_bridge_abi_test.exe
+
+      - name: WS2012R2 import gate
+        shell: pwsh
+        run: build/check-imports.ps1 -DllPath native/CurlBridge/out/build/x64-windows-static-v142/curl_http_bridge.dll
+
+      - name: Unit tests (smoke)
+        run: dotnet test tests/CurlHttpClient.Tests -c Release
+
+      - name: Determine package version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = "${{ github.event.inputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($v) -and "${{ github.ref_type }}" -eq "tag") {
+            $v = "${{ github.ref_name }}".TrimStart('v')
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          if ([string]::IsNullOrWhiteSpace($v)) {
+            Write-Host "Version: (csproj default)"
+          } else {
+            Write-Host "Version: $v"
+          }
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          # Note: $args is a PowerShell automatic variable — use our own name.
+          $packArgs = @("-c","Release","-o","artifacts","-p:ContinuousIntegrationBuild=true")
+          if (-not [string]::IsNullOrWhiteSpace("${{ steps.ver.outputs.version }}")) {
+            $packArgs += "-p:Version=${{ steps.ver.outputs.version }}"
+          }
+          dotnet pack src/CurlHttpClient/CurlHttpClient.csproj $packArgs
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          dotnet pack src/CurlHttpClient.DependencyInjection/CurlHttpClient.DependencyInjection.csproj $packArgs
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+
+      - name: NuGet Trusted-Publishing login
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to NuGet
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        shell: pwsh
+        run: |
+          $key = "${{ steps.login.outputs.NUGET_API_KEY }}"
+          $src = "https://api.nuget.org/v3/index.json"
+          # Push the base package first (CurlHttpClient.DependencyInjection
+          # depends on it). Each .nupkg push also uploads its sibling .snupkg.
+          $base = Get-ChildItem artifacts/CurlHttpClient.*.nupkg |
+                  Where-Object { $_.Name -notlike '*DependencyInjection*' }
+          dotnet nuget push $base.FullName --api-key $key --source $src --skip-duplicate
+          dotnet nuget push artifacts/CurlHttpClient.DependencyInjection.*.nupkg --api-key $key --source $src --skip-duplicate
