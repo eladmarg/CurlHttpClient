@@ -139,3 +139,9 @@ is buffered on the calling thread).
 23. **Credentials in a request URL's userinfo** (`https://user:pass@host/`) are
     not stripped from logs or from `RequestMessage.RequestUri`. Pass
     credentials via headers, not the URL.
+24. **Request header values are sent as provided** — the handler does not
+    reject `\r`/`\n` in header values added via `TryAddWithoutValidation`
+    (unlike SocketsHttpHandler, which enforces this at send time). If your
+    application places untrusted data into request header values, validate it
+    yourself to avoid header injection. (Header *names* set through the normal
+    `HttpRequestMessage` APIs are validated by the framework.)

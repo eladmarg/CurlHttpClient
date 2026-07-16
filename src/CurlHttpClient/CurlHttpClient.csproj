@@ -3,14 +3,27 @@
   <PropertyGroup>
     <RootNamespace>CurlHttp</RootNamespace>
     <AssemblyName>CurlHttpClient</AssemblyName>
-    <Description>HttpMessageHandler backed by a bundled libcurl + OpenSSL native bridge. Provides modern TLS (1.2/1.3) on hosts whose Schannel cannot, e.g. Windows Server 2012 R2.</Description>
+    <Description>A drop-in HttpMessageHandler backed by a bundled, statically-linked libcurl + OpenSSL native bridge. Gives HttpClient modern TLS 1.2/1.3 on hosts whose Schannel cannot — most notably Windows Server 2012 R2 — with no external native dependencies. Windows x64.</Description>
     <Version>1.0.0</Version>
-    <Authors>CustomHttpClient</Authors>
+    <Authors>eladmarg</Authors>
+    <Company>eladmarg</Company>
+    <Product>CurlHttpClient</Product>
+    <Copyright>Copyright (c) eladmarg</Copyright>
     <PackageId>CurlHttpClient</PackageId>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageTags>httpclient;libcurl;openssl;tls;httpmessagehandler</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>httpclient;libcurl;openssl;tls;tls1.3;httpmessagehandler;schannel;windows-server-2012-r2;https</PackageTags>
+    <!-- TODO(publish): confirm/replace with the real repository URL. -->
+    <PackageProjectUrl>https://github.com/eladmarg/CurlHttpClient</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/eladmarg/CurlHttpClient</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>See CHANGELOG.md in the repository. 1.0.0: initial public release — modern TLS via bundled libcurl+OpenSSL, dedicated-worker and opt-in curl_multi engines, streaming/cancellation/pooling, and a deep memory-safety/concurrency review.</PackageReleaseNotes>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <EnablePackageValidation>true</EnablePackageValidation>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +33,10 @@
   <ItemGroup>
     <InternalsVisibleTo Include="CurlHttpClient.Tests" />
     <InternalsVisibleTo Include="CurlHttpClient.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="PACKAGE.md" Pack="true" PackagePath="README.md" />
   </ItemGroup>
 
   <!-- Native assets: packaged under NuGet runtime conventions and copied to
