@@ -49,7 +49,9 @@ internal sealed class CurlRequestContext : IDisposable
     private BoundedByteQueue? _uploadQueue;
 
     private int _resourcesReleased;
-    private volatile Exception? _callbackException;
+    // Written via Interlocked.CompareExchange (first writer wins) in
+    // TrySetCallbackException; not volatile so that write can take a ref.
+    private Exception? _callbackException;
     private volatile bool _cancelRequested;
     private volatile bool _callerTokenTriggered;
     private volatile bool _streamDisposed;
@@ -488,7 +490,9 @@ internal sealed class CurlRequestContext : IDisposable
 
     public void TrySetCallbackException(Exception exception)
     {
-        _callbackException ??= exception;
+        // First failure wins, atomically — several native callbacks may report
+        // errors concurrently in principle.
+        Interlocked.CompareExchange(ref _callbackException, exception, null);
     }
 
     /* ---------------- completion (worker thread) ---------------- */
