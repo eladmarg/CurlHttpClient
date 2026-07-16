@@ -35,7 +35,7 @@ internal sealed class CurlRequestDispatcher : ICurlDispatcher
     private readonly ConcurrentDictionary<CurlRequestContext, byte> _active = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _perOrigin = new();
     private readonly List<Thread> _threads = [];
-    private readonly object _threadSync = new();
+    private readonly Lock _threadSync = new();
     // Cancelled by Dispose to wake requests parked on admission (the per-origin
     // gate has no timeout, so SemaphoreSlim.Dispose alone would strand them).
     private readonly CancellationTokenSource _disposeCts = new();

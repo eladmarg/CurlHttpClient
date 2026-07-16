@@ -29,7 +29,7 @@ public sealed class ManagedProxyServer : IDisposable
     private readonly ProxyMode _mode;
     private readonly string? _expectedBasicAuth; // base64(user:pass)
     private readonly List<ProxyRequestRecord> _requests = [];
-    private readonly object _sync = new();
+    private readonly Lock _sync = new();
 
     public sealed record ProxyRequestRecord(string RequestLine, string? ProxyAuthorization);
 

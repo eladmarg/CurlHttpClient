@@ -15,7 +15,7 @@ namespace CurlHttp.Native;
 /// </summary>
 internal static class NativeLibraryLoader
 {
-    private static readonly object Sync = new();
+    private static readonly Lock Sync = new();
     private static string? _configuredPath;
     private static string? _loadedPath;
     private static IntPtr _module;
