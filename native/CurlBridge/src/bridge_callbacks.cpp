@@ -160,6 +160,13 @@ size_t curl_read_cb(char* buffer, size_t size, size_t nitems, void* userdata)
         {
             return CURL_READFUNC_ABORT;
         }
+        /* Defense-in-depth: a managed callback must never claim to have written
+         * more than the buffer holds. libcurl also rejects this, but do not
+         * depend on that — an out-of-bounds size would corrupt the upload. */
+        if (produced > static_cast<int64_t>(size * nitems))
+        {
+            return CURL_READFUNC_ABORT;
+        }
         return static_cast<size_t>(produced);
     }
     catch (...)

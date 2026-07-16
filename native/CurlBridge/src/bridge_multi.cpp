@@ -52,6 +52,10 @@ struct curl_bridge_multi_client
 
     std::thread loop_thread;
     std::atomic<bool> running{false};
+    /* Cleared by multi_destroy before it enqueues Shutdown: once false, a
+     * submit that has not yet been accepted by the loop is completed with
+     * CANCELLED rather than being silently dropped. */
+    std::atomic<bool> accepting{true};
 
     /* Loop-thread-only: requests currently added to the multi. */
     std::unordered_set<curl_bridge_request*> active;
@@ -120,19 +124,30 @@ void curl_bridge_multi_client::start_request(curl_bridge_request* request)
     }
     curl_easy_setopt(handle, CURLOPT_PRIVATE, request);
 
-    active.insert(request);
+    /* Insert into `active` only after the handle is actually added to the
+     * multi, so a failed add does not leave a phantom entry and finish_request
+     * does not call curl_multi_remove_handle on a never-added easy. */
     const CURLMcode added = curl_multi_add_handle(multi, handle);
     if (added != CURLM_OK)
     {
         request->last_error = curl_multi_strerror(added);
         finish_request(request, CURLE_FAILED_INIT);
+        return;
     }
+    active.insert(request);
 }
 
 void curl_bridge_multi_client::finish_request(curl_bridge_request* request, CURLcode code)
 {
     /* Idempotent: a request can be reached by both a Cancel command and a
-     * CURLMSG_DONE; only the first finish runs. */
+     * CURLMSG_DONE. The `finished` flag guards the whole body — critically the
+     * on_complete callback — because after the first finish the managed layer
+     * frees the request's GCHandle and destroys the request object. */
+    if (request->finished)
+    {
+        return;
+    }
+    request->finished = true;
     const bool was_active = active.erase(request) != 0;
 
     curl_bridge_response_info info = {};
@@ -151,8 +166,10 @@ void curl_bridge_multi_client::finish_request(curl_bridge_request* request, CURL
     }
 
     const curl_bridge_result result = bridge::map_curl_code(code, request, &info);
-    if (result != CURL_BRIDGE_OK)
+    if (result != CURL_BRIDGE_OK && request->last_error.empty())
     {
+        /* Preserve a specific message set by configure/start (e.g. a
+         * setopt/add_handle failure); only synthesize one when none exists. */
         request->last_error = bridge::describe_failure(code, result, request->error_buffer);
     }
 
@@ -199,65 +216,100 @@ void curl_bridge_multi_client::process_commands()
     }
     for (const Command& command : local)
     {
-        switch (command.type)
+        /* Per-command containment: a throw here (e.g. bad_alloc from a
+         * container op inside start_request) must never reach the thread
+         * entry, which would std::terminate the process. */
+        try
         {
-        case CommandType::Submit:
-            start_request(command.request);
-            break;
-        case CommandType::Cancel:
-            if (active.count(command.request) != 0)
+            switch (command.type)
             {
-                command.request->cancel_requested.store(true, std::memory_order_release);
-                finish_request(command.request, CURLE_ABORTED_BY_CALLBACK);
+            case CommandType::Submit:
+                start_request(command.request);
+                break;
+            case CommandType::Cancel:
+                /* Stale-pointer safety: a queued Cancel/Unpause may name a
+                 * request that already finished and been destroyed. FIFO
+                 * ordering (single cmd_mutex, push_back, front-to-back drain)
+                 * guarantees such a stale command is processed — as a no-op,
+                 * active.count == 0 — before its address can be reused by a
+                 * newly submitted request. So the raw pointer is only hashed
+                 * and compared against `active`, never dereferenced unless the
+                 * request is genuinely still active. */
+                if (active.count(command.request) != 0)
+                {
+                    command.request->cancel_requested.store(true, std::memory_order_release);
+                    finish_request(command.request, CURLE_ABORTED_BY_CALLBACK);
+                }
+                break;
+            case CommandType::UnpauseWrite:
+            case CommandType::UnpauseRead:
+                if (active.count(command.request) != 0 && command.request->easy != nullptr)
+                {
+                    curl_easy_pause(command.request->easy, CURLPAUSE_CONT);
+                }
+                break;
+            case CommandType::Shutdown:
+                running.store(false, std::memory_order_release);
+                break;
             }
-            break;
-        case CommandType::UnpauseWrite:
-        case CommandType::UnpauseRead:
-            if (active.count(command.request) != 0 && command.request->easy != nullptr)
+        }
+        catch (...)
+        {
+            /* Unblock a Submit whose start threw; other command failures are
+             * benign (a missed cancel/unpause is caught by shutdown). */
+            if (command.type == CommandType::Submit)
             {
-                curl_easy_pause(command.request->easy, CURLPAUSE_CONT);
+                try { finish_request(command.request, CURLE_OUT_OF_MEMORY); }
+                catch (...) {}
             }
-            break;
-        case CommandType::Shutdown:
-            running.store(false, std::memory_order_release);
-            break;
         }
     }
 }
 
 void curl_bridge_multi_client::run()
 {
-    while (running.load(std::memory_order_acquire))
+    /* Whole-loop containment: no exception may escape a std::thread entry
+     * (that is an unconditional std::terminate). A throw here breaks the loop
+     * and falls through to the shutdown sweep so every request is still
+     * completed rather than orphaned. */
+    try
     {
-        process_commands();
-
-        int still_running = 0;
-        curl_multi_perform(multi, &still_running);
-
-        int in_queue = 0;
-        CURLMsg* message;
-        while ((message = curl_multi_info_read(multi, &in_queue)) != nullptr)
+        while (running.load(std::memory_order_acquire))
         {
-            if (message->msg == CURLMSG_DONE)
+            process_commands();
+
+            int still_running = 0;
+            curl_multi_perform(multi, &still_running);
+
+            int in_queue = 0;
+            CURLMsg* message;
+            while ((message = curl_multi_info_read(multi, &in_queue)) != nullptr)
             {
-                curl_bridge_request* request = nullptr;
-                curl_easy_getinfo(message->easy_handle, CURLINFO_PRIVATE, &request);
-                if (request != nullptr)
+                if (message->msg == CURLMSG_DONE)
                 {
-                    finish_request(request, message->data.result);
+                    curl_bridge_request* request = nullptr;
+                    curl_easy_getinfo(message->easy_handle, CURLINFO_PRIVATE, &request);
+                    if (request != nullptr)
+                    {
+                        finish_request(request, message->data.result);
+                    }
                 }
             }
-        }
 
-        if (!running.load(std::memory_order_acquire))
-        {
-            break;
-        }
+            if (!running.load(std::memory_order_acquire))
+            {
+                break;
+            }
 
-        /* Sleep until socket activity, a timeout, or curl_multi_wakeup. The
-         * 1 s cap bounds libcurl's internal timers; poll (not wait) sleeps the
-         * full timeout even with nothing to monitor. */
-        curl_multi_poll(multi, nullptr, 0, 1000, nullptr);
+            /* Sleep until socket activity, a timeout, or curl_multi_wakeup. The
+             * 1 s cap bounds libcurl's internal timers; poll (not wait) sleeps the
+             * full timeout even with nothing to monitor. */
+            curl_multi_poll(multi, nullptr, 0, 1000, nullptr);
+        }
+    }
+    catch (...)
+    {
+        running.store(false, std::memory_order_release);
     }
 
     /* Shutdown: cancel everything still in flight. */
@@ -265,7 +317,25 @@ void curl_bridge_multi_client::run()
     for (curl_bridge_request* request : remaining)
     {
         request->cancel_requested.store(true, std::memory_order_release);
-        finish_request(request, CURLE_ABORTED_BY_CALLBACK);
+        try { finish_request(request, CURLE_ABORTED_BY_CALLBACK); }
+        catch (...) {}
+    }
+
+    /* Drain commands enqueued after the final process_commands swap: a Submit
+     * that raced shutdown would otherwise never be completed, hanging its
+     * caller forever. Complete each late Submit with CANCELLED. */
+    std::deque<Command> leftover;
+    {
+        std::lock_guard<std::mutex> guard(cmd_mutex);
+        leftover.swap(commands);
+    }
+    for (const Command& command : leftover)
+    {
+        if (command.type == CommandType::Submit && !command.request->finished)
+        {
+            try { complete_error(command.request, CURL_BRIDGE_CANCELLED); }
+            catch (...) {}
+        }
     }
 }
 
@@ -302,12 +372,14 @@ curl_bridge_multi_create(const curl_bridge_client_options* options)
     }
     catch (const std::exception& ex)
     {
-        bridge::set_last_global_error(std::string("multi_create: ") + ex.what());
+        /* No string concatenation in the handler: ex may be bad_alloc. */
+        try { bridge::set_last_global_error(ex.what()); } catch (...) {}
         return nullptr;
     }
     catch (...)
     {
-        bridge::set_last_global_error("multi_create: unknown native exception");
+        try { bridge::set_last_global_error("multi_create: unknown native exception"); }
+        catch (...) {}
         return nullptr;
     }
 }
@@ -321,6 +393,9 @@ curl_bridge_multi_destroy(curl_bridge_multi_client* client)
     }
     try
     {
+        /* Stop accepting new work before signalling shutdown so a submit that
+         * races this destroy is completed (CANCELLED) rather than dropped. */
+        client->accepting.store(false, std::memory_order_release);
         client->enqueue(CommandType::Shutdown, nullptr);
         if (client->loop_thread.joinable())
         {
@@ -373,9 +448,24 @@ curl_bridge_multi_submit(curl_bridge_multi_client* client, curl_bridge_request* 
         request->last_error = "body, header and completion callbacks are required";
         return CURL_BRIDGE_INVALID_ARGUMENT;
     }
-    request->submitted = true;
-    client->enqueue(CommandType::Submit, request);
-    return CURL_BRIDGE_OK;
+    /* Refuse work once shutdown has begun: the loop may already be past its
+     * final command drain, in which case the submit would never complete. */
+    if (!client->accepting.load(std::memory_order_acquire))
+    {
+        request->last_error = "client is shutting down";
+        return CURL_BRIDGE_CANCELLED;
+    }
+    try
+    {
+        request->submitted = true;
+        client->enqueue(CommandType::Submit, request);
+        return CURL_BRIDGE_OK;
+    }
+    catch (...)
+    {
+        /* enqueue allocates (deque push_back); never let it cross the ABI. */
+        return CURL_BRIDGE_INTERNAL_ERROR;
+    }
 }
 
 CURL_BRIDGE_API void CURL_BRIDGE_CALL
@@ -384,7 +474,9 @@ curl_bridge_multi_cancel(curl_bridge_multi_client* client, curl_bridge_request* 
     if (client != nullptr && request != nullptr)
     {
         request->cancel_requested.store(true, std::memory_order_release);
-        client->enqueue(CommandType::Cancel, request);
+        /* enqueue allocates; a throw must not cross the C ABI. The cancel flag
+         * is already set, so the loop's xferinfo/next poll still observes it. */
+        try { client->enqueue(CommandType::Cancel, request); } catch (...) {}
     }
 }
 
@@ -393,7 +485,7 @@ curl_bridge_multi_unpause_write(curl_bridge_multi_client* client, curl_bridge_re
 {
     if (client != nullptr && request != nullptr)
     {
-        client->enqueue(CommandType::UnpauseWrite, request);
+        try { client->enqueue(CommandType::UnpauseWrite, request); } catch (...) {}
     }
 }
 
@@ -402,7 +494,7 @@ curl_bridge_multi_unpause_read(curl_bridge_multi_client* client, curl_bridge_req
 {
     if (client != nullptr && request != nullptr)
     {
-        client->enqueue(CommandType::UnpauseRead, request);
+        try { client->enqueue(CommandType::UnpauseRead, request); } catch (...) {}
     }
 }
 

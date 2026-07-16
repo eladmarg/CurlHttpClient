@@ -4,6 +4,7 @@
 
 #include "bridge_internal.h"
 
+#include <climits>
 #include <cstring>
 #include <thread>
 
@@ -16,9 +17,48 @@ namespace
         return result;
     }
 
+    /* Records an error message without ever throwing — for use inside catch
+     * handlers, where the caught exception may itself be std::bad_alloc and a
+     * throwing string assignment would escape the export across the C ABI
+     * (std::terminate under /EHsc). Best-effort: if even assigning the literal
+     * fails, the error text is simply left as-is. */
+    curl_bridge_result fail_noexcept(curl_bridge_request* request, const char* message,
+                                     curl_bridge_result result) noexcept
+    {
+        try
+        {
+            request->last_error = message;
+        }
+        catch (...)
+        {
+        }
+        return result;
+    }
+
     bool has_body(const curl_bridge_request& request)
     {
         return request.content_length != CURL_BRIDGE_NO_BODY;
+    }
+
+    /* libcurl's timeout/age options take a `long`, which is 32-bit on LLP64
+     * (Win64). A managed TimeSpan can exceed LONG_MAX ms/s; casting straight
+     * to long wraps negative (rejected by setopt -> whole request fails) or,
+     * above 2^32, silently truncates to a small positive value. Clamp into
+     * [0, LONG_MAX] so a very large "effectively infinite" timeout becomes the
+     * largest value libcurl accepts rather than a wrong or rejected one.
+     * Managed-side validation (Options.Validate) rejects the extreme cases
+     * before they reach here; this is the last-line native guard. */
+    long clamp_to_long(long long value)
+    {
+        if (value > static_cast<long long>(LONG_MAX))
+        {
+            return LONG_MAX;
+        }
+        if (value < 0)
+        {
+            return 0;
+        }
+        return static_cast<long>(value);
     }
 
     /* Applies HTTP-method semantics. libcurl couples methods to transfer
@@ -194,30 +234,30 @@ namespace
             ok = ok && set(CURLOPT_PROXYAUTH, static_cast<long>(CURLAUTH_ANY));
         }
 
-        /* Timeouts. */
+        /* Timeouts. (clamp_to_long: libcurl `long` is 32-bit on Win64.) */
         if (cfg.connect_timeout_ms > 0)
         {
             ok = ok && set(CURLOPT_CONNECTTIMEOUT_MS,
-                           static_cast<long>(cfg.connect_timeout_ms));
+                           clamp_to_long(cfg.connect_timeout_ms));
         }
         const long long total_timeout_ms = request->timeout_override_ms >= 0
             ? request->timeout_override_ms
             : cfg.request_timeout_ms;
         if (total_timeout_ms > 0)
         {
-            ok = ok && set(CURLOPT_TIMEOUT_MS, static_cast<long>(total_timeout_ms));
+            ok = ok && set(CURLOPT_TIMEOUT_MS, clamp_to_long(total_timeout_ms));
         }
 
         /* Connection lifetime. */
         if (cfg.connection_idle_timeout_secs > 0)
         {
             ok = ok && set(CURLOPT_MAXAGE_CONN,
-                           static_cast<long>(cfg.connection_idle_timeout_secs));
+                           clamp_to_long(cfg.connection_idle_timeout_secs));
         }
         if (cfg.connection_max_lifetime_secs > 0)
         {
             ok = ok && set(CURLOPT_MAXLIFETIME_CONN,
-                           static_cast<long>(cfg.connection_max_lifetime_secs));
+                           clamp_to_long(cfg.connection_max_lifetime_secs));
         }
 
         /* Decompression. */
@@ -661,14 +701,16 @@ curl_bridge_request_send(curl_bridge_request* request,
     {
         request->in_send.store(false, std::memory_order_release);
         request->client->active_requests.fetch_sub(1, std::memory_order_acq_rel);
-        return fail(request, std::string("send: native exception: ") + ex.what(),
-                    CURL_BRIDGE_INTERNAL_ERROR);
+        /* Do not concatenate ex.what() into a new string here: if ex is
+         * std::bad_alloc, that allocation would throw again and escape. */
+        return fail_noexcept(request, ex.what(), CURL_BRIDGE_INTERNAL_ERROR);
     }
     catch (...)
     {
         request->in_send.store(false, std::memory_order_release);
         request->client->active_requests.fetch_sub(1, std::memory_order_acq_rel);
-        return fail(request, "send: unknown native exception", CURL_BRIDGE_INTERNAL_ERROR);
+        return fail_noexcept(request, "send: unknown native exception",
+                             CURL_BRIDGE_INTERNAL_ERROR);
     }
 }
 

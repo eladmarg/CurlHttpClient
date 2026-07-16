@@ -3,6 +3,7 @@
 
 #include "bridge_internal.h"
 
+#include <chrono>
 #include <memory>
 #include <thread>
 
@@ -265,12 +266,14 @@ curl_bridge_client_create(const curl_bridge_client_options* options)
     }
     catch (const std::exception& ex)
     {
-        bridge::set_last_global_error(std::string("client_create: ") + ex.what());
+        /* No concatenation in the handler: ex may be bad_alloc. */
+        try { bridge::set_last_global_error(ex.what()); } catch (...) {}
         return nullptr;
     }
     catch (...)
     {
-        bridge::set_last_global_error("client_create: unknown native exception");
+        try { bridge::set_last_global_error("client_create: unknown native exception"); }
+        catch (...) {}
         return nullptr;
     }
 }
@@ -287,11 +290,14 @@ curl_bridge_client_destroy(curl_bridge_client* client)
         client->shutting_down.store(true, std::memory_order_release);
 
         /* Backstop: the managed layer cancels and drains all requests before
-         * destroying the client. Spin briefly for stragglers; handles owned
-         * by an active request are cleaned up on release (shutting_down). */
+         * destroying the client, so this normally does not spin at all.
+         * Waiting here (rather than destroying with active_requests > 0) is a
+         * hard safety requirement — a live request still dereferences this
+         * client, so proceeding would be a use-after-free. Sleep rather than
+         * busy-yield so a genuinely wedged straggler does not peg a core. */
         while (client->active_requests.load(std::memory_order_acquire) > 0)
         {
-            std::this_thread::yield();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
         {

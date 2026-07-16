@@ -109,6 +109,16 @@ struct curl_bridge_request
     explicit curl_bridge_request(curl_bridge_client* owner) : client(owner) {}
     ~curl_bridge_request()
     {
+        /* During a transfer, extra_headers is physically linked onto the tail
+         * of `headers`, so freeing `headers` frees it too. It is standalone
+         * only when the request has no caller headers (headers == nullptr) and
+         * was destroyed without a clean finish (see the event-loop orphan
+         * paths); free it explicitly then to avoid a leak. finish_request /
+         * request_send null it out on the normal path so this never runs then. */
+        if (extra_headers != nullptr && headers == nullptr)
+        {
+            curl_slist_free_all(extra_headers);
+        }
         if (headers != nullptr)
         {
             curl_slist_free_all(headers);
@@ -150,6 +160,9 @@ struct curl_bridge_request
     CURL* easy = nullptr;
     curl_slist* extra_headers = nullptr;
     bool submitted = false;
+    /* Loop-thread-only guard: finish_request runs its cleanup + on_complete at
+     * most once even if reached by both a Cancel command and CURLMSG_DONE. */
+    bool finished = false;
 };
 
 #endif /* CURL_BRIDGE_INTERNAL_H */
