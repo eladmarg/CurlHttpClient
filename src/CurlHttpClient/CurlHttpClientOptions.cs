@@ -147,6 +147,13 @@ public sealed class CurlHttpClientOptions
     /// When full, the native transfer is paused by backpressure.</summary>
     public int MaxResponseBufferBytes { get; init; } = 1024 * 1024;
 
+    /// <summary>Maximum total size, in bytes, of a response's header block
+    /// (all header lines and trailers, names + values). A server exceeding
+    /// this fails the transfer instead of growing managed memory without
+    /// bound. Mirrors SocketsHttpHandler's MaxResponseHeadersLength intent.
+    /// Default: 1 MiB.</summary>
+    public int MaxResponseHeadersLength { get; init; } = 1024 * 1024;
+
     /// <summary>libcurl receive buffer size (bigger chunks = fewer
     /// native→managed transitions on fast downloads).</summary>
     public int ReceiveBufferSize { get; init; } = 256 * 1024;
@@ -174,22 +181,45 @@ public sealed class CurlHttpClientOptions
                 $"MinimumTlsVersion must be 1.2 or 1.3 (got {MinimumTlsVersion}). " +
                 "Older TLS versions are deliberately unsupported.");
         }
-        if (MaxAutomaticRedirections < 1 && AllowAutoRedirect)
+        // >= 1 regardless of AllowAutoRedirect: the value is applied to
+        // CURLOPT_MAXREDIRS unconditionally, so a negative value would fail
+        // every request even with redirects turned off.
+        if (MaxAutomaticRedirections < 1)
         {
-            throw new ArgumentException("MaxAutomaticRedirections must be >= 1 when AllowAutoRedirect is enabled.");
+            throw new ArgumentException("MaxAutomaticRedirections must be >= 1.");
         }
         if (MaxConcurrentRequests < 1)
         {
             throw new ArgumentException("MaxConcurrentRequests must be >= 1.");
         }
+        if (MaxConnectionsPerServer < 0)
+        {
+            throw new ArgumentException("MaxConnectionsPerServer must be >= 0 (0 = unlimited).");
+        }
         if (MaxResponseBufferBytes < 64 * 1024)
         {
             throw new ArgumentException("MaxResponseBufferBytes must be at least 64 KiB.");
+        }
+        if (MaxResponseHeadersLength < 1024)
+        {
+            throw new ArgumentException("MaxResponseHeadersLength must be at least 1 KiB.");
         }
         if (ReceiveBufferSize < 16 * 1024 || ReceiveBufferSize > 10 * 1024 * 1024)
         {
             throw new ArgumentException("ReceiveBufferSize must be between 16 KiB and 10 MiB.");
         }
+        // 0 = libcurl default; otherwise within libcurl's accepted 16 KiB..2 MiB.
+        if (UploadBufferSize < 0 || UploadBufferSize > 2 * 1024 * 1024)
+        {
+            throw new ArgumentException("UploadBufferSize must be between 0 and 2 MiB.");
+        }
+        ValidateTimeout(ConnectTimeout, nameof(ConnectTimeout));
+        if (RequestTimeout is { } requestTimeout)
+        {
+            ValidateTimeout(requestTimeout, nameof(RequestTimeout));
+        }
+        ValidateTimeout(PooledConnectionIdleTimeout, nameof(PooledConnectionIdleTimeout));
+        ValidateTimeout(PooledConnectionLifetime, nameof(PooledConnectionLifetime));
         if (ClientCertificateType is not null and not "PEM" and not "P12")
         {
             throw new ArgumentException("ClientCertificateType must be \"PEM\" or \"P12\".");
@@ -198,6 +228,27 @@ public sealed class CurlHttpClientOptions
         {
             throw new FileNotFoundException(
                 "CertificateAuthorityBundlePath does not exist.", CertificateAuthorityBundlePath);
+        }
+    }
+
+    /// <summary>Rejects timeouts that would be lost crossing to libcurl's
+    /// 32-bit <c>long</c> options on Win64. Zero and Timeout.InfiniteTimeSpan
+    /// mean "no timeout" (libcurl default) and are allowed.</summary>
+    private static void ValidateTimeout(TimeSpan value, string name)
+    {
+        if (value == Timeout.InfiniteTimeSpan || value == TimeSpan.Zero)
+        {
+            return;
+        }
+        if (value < TimeSpan.Zero)
+        {
+            throw new ArgumentException($"{name} must not be negative (use Timeout.InfiniteTimeSpan for no timeout).");
+        }
+        if (value.TotalMilliseconds > int.MaxValue)
+        {
+            throw new ArgumentException(
+                $"{name} must be at most {TimeSpan.FromMilliseconds(int.MaxValue).TotalDays:F0} days " +
+                "(libcurl's timeout is a 32-bit millisecond value).");
         }
     }
 }

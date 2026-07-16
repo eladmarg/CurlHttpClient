@@ -68,7 +68,7 @@ internal sealed class CurlRequestContext : IDisposable
         CallerToken = callerToken;
         _events = events;
         _parser = new ResponseHeaderParser(request.RequestUri!, options.AllowAutoRedirect,
-            proxyAuthRetryPossible);
+            proxyAuthRetryPossible, options.MaxResponseHeadersLength);
         BodyQueue = new BoundedByteQueue(options.MaxResponseBufferBytes);
     }
 

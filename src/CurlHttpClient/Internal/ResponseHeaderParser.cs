@@ -34,6 +34,8 @@ internal sealed class ResponseHeaderParser
 {
     private readonly bool _followRedirects;
     private readonly bool _proxyAuthRetryPossible;
+    private readonly int _maxHeadersLength;
+    private long _headerBytes;
     private readonly List<(string Name, string Value)> _headers = [];
     private readonly List<(string Name, string Value)> _trailers = [];
 
@@ -46,11 +48,26 @@ internal sealed class ResponseHeaderParser
     private Uri _currentUri;
 
     public ResponseHeaderParser(Uri requestUri, bool followRedirects,
-        bool proxyAuthRetryPossible = false)
+        bool proxyAuthRetryPossible = false, int maxHeadersLength = int.MaxValue)
     {
         _currentUri = requestUri;
         _followRedirects = followRedirects;
         _proxyAuthRetryPossible = proxyAuthRetryPossible;
+        _maxHeadersLength = maxHeadersLength;
+    }
+
+    /// <summary>Accrues the running header-block size and fails the transfer if
+    /// it exceeds the configured cap, so a server cannot exhaust managed memory
+    /// by streaming an unbounded number of header lines.</summary>
+    private void AccountHeaderBytes(string name, string value)
+    {
+        _headerBytes += name.Length + value.Length + 4; // ": " + CRLF
+        if (_headerBytes > _maxHeadersLength)
+        {
+            throw new HttpRequestException(
+                HttpRequestError.ConfigurationLimitExceeded,
+                $"The response header block exceeded MaxResponseHeadersLength ({_maxHeadersLength} bytes).");
+        }
     }
 
     /// <summary>Set when a completed block is known to be the final response.
@@ -82,6 +99,7 @@ internal sealed class ResponseHeaderParser
             if (text.Length > 0 && (flags & HeaderLineFlags.StatusLine) == 0 &&
                 TrySplitHeader(text, out string tn, out string tv))
             {
+                AccountHeaderBytes(tn, tv);
                 _trailers.Add((tn, tv));
             }
             return false;
@@ -139,6 +157,7 @@ internal sealed class ResponseHeaderParser
 
         if (_blockOpen && text.Length > 0 && TrySplitHeader(text, out string name, out string value))
         {
+            AccountHeaderBytes(name, value);
             _headers.Add((name, value));
         }
         return false;

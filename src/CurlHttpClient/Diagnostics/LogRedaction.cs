@@ -23,7 +23,27 @@ internal static class LogRedaction
                 return string.Concat(line.AsSpan(0, prefix.Length), " <redacted>");
             }
         }
-        return line;
+        // Free-form libcurl TEXT lines (kind 0) are not header-prefixed but can
+        // still name a credential, e.g. "Proxy auth using Basic with user
+        // 'alice'". Scrub the quoted user name.
+        return RedactQuotedUser(line);
+    }
+
+    private static string RedactQuotedUser(string line)
+    {
+        const string marker = "user '";
+        int start = line.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+        {
+            return line;
+        }
+        int valueStart = start + marker.Length;
+        int end = line.IndexOf('\'', valueStart);
+        if (end < 0)
+        {
+            return line;
+        }
+        return string.Concat(line.AsSpan(0, valueStart), "<redacted>", line.AsSpan(end));
     }
 
     /// <summary>Optionally strips query strings from URLs before logging
