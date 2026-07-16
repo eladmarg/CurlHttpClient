@@ -40,6 +40,18 @@ target_compile_definitions(curl_http_bridge PRIVATE
 if(MSVC)
     target_compile_options(curl_http_bridge PRIVATE /W4 /permissive- /EHsc /guard:cf)
     target_link_options(curl_http_bridge PRIVATE /guard:cf)
+
+    # Opt-in MSVC static analysis (CI/diagnostics only): cmake --preset ...
+    # -DCURL_BRIDGE_ANALYZE=ON. /analyze:external- skips the vcpkg headers.
+    option(CURL_BRIDGE_ANALYZE "Enable MSVC /analyze static analysis" OFF)
+    if(CURL_BRIDGE_ANALYZE)
+        target_compile_options(curl_http_bridge PRIVATE /analyze /analyze:external-)
+    endif()
+
+    # Opt-in AddressSanitizer for the diagnostics harness (soak/abi exes).
+    # Diagnostics-only and best built with a current toolset (v143); the
+    # shipped DLL stays on v142. Incompatible with /guard:cf, so drop it here.
+    option(CURL_BRIDGE_ASAN "Build the native test harnesses with ASan" OFF)
 endif()
 
 # OpenSSL is the same static archive libcurl links; the direct dependency is
