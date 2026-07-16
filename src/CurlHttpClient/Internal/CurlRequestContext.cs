@@ -47,7 +47,6 @@ internal sealed class CurlRequestContext : IDisposable
     private volatile CurlBridgeMultiClientHandle? _multiClient;
     private volatile CurlBridgeRequestHandle? _multiRequestHandle;
     private BoundedByteQueue? _uploadQueue;
-    private Task? _uploadPump;
 
     private int _resourcesReleased;
     private volatile Exception? _callbackException;
@@ -222,7 +221,7 @@ internal sealed class CurlRequestContext : IDisposable
         {
             _uploadQueue = new BoundedByteQueue(Math.Max(uploadBufferBytes, 64 * 1024) * 2);
             _uploadQueue.SetDataAvailableCallback(RequestUnpauseRead);
-            _uploadPump = Task.Run(PumpUploadAsync);
+            Task.Run(PumpUploadAsync);
         }
     }
 

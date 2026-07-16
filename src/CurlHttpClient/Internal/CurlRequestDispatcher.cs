@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Net.Http;
 using CurlHttp.Native;
 
 namespace CurlHttp.Internal;

@@ -1,4 +1,3 @@
-using System.Net;
 using Xunit;
 
 namespace CurlHttp.IntegrationTests.CipherSuites;

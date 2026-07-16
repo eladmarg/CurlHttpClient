@@ -1,4 +1,3 @@
-using CurlHttp;
 using Xunit;
 
 namespace CurlHttp.Tests;

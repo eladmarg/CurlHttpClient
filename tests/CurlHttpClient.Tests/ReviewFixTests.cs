@@ -1,5 +1,4 @@
 using System.Text;
-using CurlHttp;
 using CurlHttp.Internal;
 using CurlHttp.Native;
 using Xunit;

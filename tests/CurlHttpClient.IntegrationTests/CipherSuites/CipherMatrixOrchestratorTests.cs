@@ -1,5 +1,3 @@
-using System.Net;
-using CurlHttp;
 using CurlHttp.IntegrationTests.Infrastructure;
 using Xunit;
 using Xunit.Abstractions;
