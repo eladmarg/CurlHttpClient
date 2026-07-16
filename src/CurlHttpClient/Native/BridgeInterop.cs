@@ -69,6 +69,9 @@ internal struct BridgeClientOptionsNative
     /// <summary>CA bundle file path (preferred over <see cref="CaBundlePem"/>;
     /// enables OpenSSL's cross-connection X509-store cache).</summary>
     public IntPtr CaBundlePath;
+
+    /// <summary>CURLOPT_UPLOAD_BUFFERSIZE bytes; 0 = libcurl default (64 KiB).</summary>
+    public int UploadBufferSize;
 }
 
 /// <summary>Mirror of <c>curl_bridge_callbacks</c>.</summary>

@@ -42,9 +42,15 @@ public static class PerfHarness
             await using var server = await PerfServer.StartAsync(leaf);
             var results = new List<ScenarioResult>();
 
+            int uploadBuf = int.TryParse(
+                Environment.GetEnvironmentVariable("CURLHTTP_UPLOAD_BUF"), out int ub) ? ub : 0;
+            int recvBuf = int.TryParse(
+                Environment.GetEnvironmentVariable("CURLHTTP_RECV_BUF"), out int rb) ? rb : 256 * 1024;
             using (var handler = new CurlHttpMessageHandler(new CurlHttpClientOptions
             {
                 CertificateAuthorityBundlePath = caBundle,
+                UploadBufferSize = uploadBuf,
+                ReceiveBufferSize = recvBuf,
             }))
             using (var client = new HttpClient(handler))
             {

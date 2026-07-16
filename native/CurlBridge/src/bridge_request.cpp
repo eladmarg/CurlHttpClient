@@ -102,9 +102,20 @@ namespace
          * CONNECT requests. */
         ok = ok && set(CURLOPT_HEADEROPT, CURLHEADER_SEPARATE);
         ok = ok && set(CURLOPT_BUFFERSIZE, static_cast<long>(cfg.buffer_size));
+        if (cfg.upload_buffer_size > 0)
+        {
+            ok = ok && set(CURLOPT_UPLOAD_BUFFERSIZE,
+                           static_cast<long>(cfg.upload_buffer_size));
+        }
         ok = ok && set(CURLOPT_HTTP_VERSION,
                        cfg.enable_http2 ? CURL_HTTP_VERSION_2TLS
                                         : CURL_HTTP_VERSION_1_1);
+        if (cfg.enable_http2)
+        {
+            /* Wait for an existing multiplexable h2 connection rather than
+             * racing a second one open — improves connection reuse. */
+            ok = ok && set(CURLOPT_PIPEWAIT, 1L);
+        }
 
         /* Callbacks. */
         ok = ok && set(CURLOPT_WRITEFUNCTION, bridge::curl_write_cb);
@@ -591,7 +602,11 @@ curl_bridge_request_send(curl_bridge_request* request,
 
                 const char* effective = nullptr;
                 if (curl_easy_getinfo(handle, CURLINFO_EFFECTIVE_URL, &effective) == CURLE_OK &&
-                    effective != nullptr)
+                    effective != nullptr &&
+                    /* Only copy when redirects actually changed the URL — the
+                     * common no-redirect case skips a std::string assignment
+                     * and the managed side already knows the request URL. */
+                    request->url != effective)
                 {
                     request->effective_url = effective;
                 }

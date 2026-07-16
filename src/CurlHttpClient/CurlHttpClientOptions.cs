@@ -128,6 +128,11 @@ public sealed class CurlHttpClientOptions
     /// native→managed transitions on fast downloads).</summary>
     public int ReceiveBufferSize { get; init; } = 256 * 1024;
 
+    /// <summary>libcurl upload buffer size (CURLOPT_UPLOAD_BUFFERSIZE): bigger
+    /// = fewer read-callback round trips on large uploads. Zero = libcurl
+    /// default (64 KiB). libcurl clamps to 16 KiB..2 MiB.</summary>
+    public int UploadBufferSize { get; init; }
+
     /// <summary>Idle keep-alive connections older than this are not reused
     /// (CURLOPT_MAXAGE_CONN). Zero = libcurl default (118 s).</summary>
     public TimeSpan PooledConnectionIdleTimeout { get; init; }

@@ -92,6 +92,12 @@ namespace
         c.max_easy_handles = o.max_easy_handles;
         c.connection_idle_timeout_secs = o.connection_idle_timeout_secs;
         c.connection_max_lifetime_secs = o.connection_max_lifetime_secs;
+        if (o.struct_size >= offsetof(curl_bridge_client_options, upload_buffer_size) +
+                sizeof(o.upload_buffer_size) &&
+            o.upload_buffer_size > 0)
+        {
+            c.upload_buffer_size = o.upload_buffer_size;
+        }
         return true;
     }
 

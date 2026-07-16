@@ -364,6 +364,7 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
                     EnableCookieEngine = options.EnableCookieEngineForRedirects ? 1 : 0,
                     Verbose = options.EnableNativeVerboseLogging ? 1 : 0,
                     BufferSize = options.ReceiveBufferSize,
+                    UploadBufferSize = options.UploadBufferSize,
                     MaxEasyHandles = Math.Min(options.MaxConcurrentRequests, 16),
                     ConnectionIdleTimeoutSecs = (long)options.PooledConnectionIdleTimeout.TotalSeconds,
                     ConnectionMaxLifetimeSecs = (long)options.PooledConnectionLifetime.TotalSeconds,

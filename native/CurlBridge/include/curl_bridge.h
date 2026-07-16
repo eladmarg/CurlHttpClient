@@ -191,6 +191,11 @@ typedef struct curl_bridge_client_options
      * that cache and re-parses the bundle on every new TLS handshake. When
      * set (non-NULL, non-empty), the path is used and ca_bundle_pem ignored. */
     const char* ca_bundle_path;
+
+    /* CURLOPT_UPLOAD_BUFFERSIZE (bytes). 0 => libcurl default (64 KiB). A
+     * larger buffer means fewer read-callback round trips on big uploads.
+     * Range enforced by libcurl: 16 KiB..2 MiB. */
+    int32_t upload_buffer_size;
 } curl_bridge_client_options;
 
 /* ------------------------------------------------------------------ */

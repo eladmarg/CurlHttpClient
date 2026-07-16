@@ -39,6 +39,7 @@ namespace bridge
         bool enable_cookie_engine = false;
         bool verbose = false;
         long buffer_size = 256 * 1024;
+        long upload_buffer_size = 0; /* 0 => libcurl default (64 KiB) */
 
         int max_easy_handles = 0;
         long long connection_idle_timeout_secs = 0;
