@@ -95,14 +95,17 @@ jobs:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
       - name: Integration + TLS + fast cipher suites (worker engine)
-        run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --logger "trx;LogFileName=integration.trx" --results-directory artifacts/test-results
+        # --blame-crash/-hang: on a host crash or hang the runner writes a
+        # Sequence.xml (naming the culprit test) + a dump under artifacts, so a
+        # bare "exit code 1" becomes diagnosable.
+        run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --logger "trx;LogFileName=integration.trx" --results-directory artifacts/test-results --blame-crash --blame-hang-timeout 120s
       - name: Behavioral suite against the event-loop engine
         # The coverage gate is worker-specific; run the shared-fixture
         # behavioral suite against MultiEventLoop to certify both engines.
         env:
           CURLHTTP_ENGINE: multi
           CURLHTTP_ENFORCE_COVERAGE: "0"
-        run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --logger "trx;LogFileName=integration-multi.trx" --results-directory artifacts/test-results
+        run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --logger "trx;LogFileName=integration-multi.trx" --results-directory artifacts/test-results --blame-crash --blame-hang-timeout 120s
       - uses: actions/upload-artifact@v4
         if: always()
         with:

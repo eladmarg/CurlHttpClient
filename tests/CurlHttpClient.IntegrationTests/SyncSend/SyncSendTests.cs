@@ -47,15 +47,19 @@ public class SyncSendTests(ServerFixture fixture)
     [ApiCoverage("HttpClient.Send(HttpRequestMessage, HttpCompletionOption, CancellationToken)")]
     public void Send_WithCompletionOptionAndToken_StreamsHeadersFirst()
     {
+        // Body ~4 s (4 chunks x 1 s). A wide gap between header arrival and body
+        // completion keeps the streaming proof robust on a slow/contended CI
+        // runner (a sync Send competes for ThreadPool threads while the parallel
+        // cipher-suites collection saturates the cores).
         using var request = new HttpRequestMessage(
-            HttpMethod.Get, fixture.Http("/slow-body?chunks=4&delayMs=200"));
+            HttpMethod.Get, fixture.Http("/slow-body?chunks=4&delayMs=1000"));
         var stopwatch = Stopwatch.StartNew();
         using HttpResponseMessage response = Client.Send(
             request, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
         stopwatch.Stop();
 
-        // Headers must arrive before the ~800 ms body completes.
-        Assert.True(stopwatch.ElapsedMilliseconds < 700,
+        // Headers must arrive well before the ~4 s body completes.
+        Assert.True(stopwatch.ElapsedMilliseconds < 2000,
             $"sync headers took {stopwatch.ElapsedMilliseconds} ms — buffered, not streamed");
 
         // Fully synchronous read of the streaming body.

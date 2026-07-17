@@ -1,4 +1,3 @@
-using System.Net.Sockets;
 using Xunit;
 
 namespace CurlHttp.IntegrationTests.Lifetime;
@@ -27,15 +26,12 @@ public class ReviewRegressionTests(ServerFixture fixture)
             MaxConnectionsPerServer = maxPerServer,
         });
 
-    /// <summary>A loopback port with nothing listening: connect() is refused.</summary>
-    private static Uri RefusedEndpoint()
-    {
-        var listener = new TcpListener(System.Net.IPAddress.Loopback, 0);
-        listener.Start();
-        int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return new Uri($"http://127.0.0.1:{port}/");
-    }
+    /// <summary>A fixed loopback endpoint with nothing listening — connect() is
+    /// refused immediately and deterministically. Intentionally NOT a bound-then-
+    /// freed ephemeral port: under CI's parallel test load a freed port can be
+    /// re-bound by another socket, turning an expected "refused" into a real
+    /// connection and breaking the test. Port 1 (TCPMUX) is never a listener.</summary>
+    private static readonly Uri RefusedEndpoint = new("http://127.0.0.1:1/");
 
     [Theory]
     [InlineData(CurlExecutionEngine.MultiEventLoop)] // M1 is multi-specific
@@ -47,7 +43,7 @@ public class ReviewRegressionTests(ServerFixture fixture)
         using var handler = NewHandler(engine, maxConcurrent: 16,
             connectTimeout: TimeSpan.FromSeconds(2));
         using var client = new HttpClient(handler, disposeHandler: false);
-        Uri refused = RefusedEndpoint();
+        Uri refused = RefusedEndpoint;
 
         // A burst of pre-header failures is exactly the path where the multi
         // engine used to double-free the GCHandle / double-return the buffer

@@ -38,13 +38,14 @@ public class HttpBehaviorTests(ServerFixture fixture)
     {
         var stopwatch = Stopwatch.StartNew();
         using HttpResponseMessage response = await Client.SendAsync(
-            new HttpRequestMessage(HttpMethod.Get, fixture.Http("/slow-body?chunks=6&delayMs=250")),
+            new HttpRequestMessage(HttpMethod.Get, fixture.Http("/slow-body?chunks=6&delayMs=500")),
             HttpCompletionOption.ResponseHeadersRead);
         stopwatch.Stop();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        // Body takes ~1.5 s; headers must arrive well before that.
-        Assert.True(stopwatch.ElapsedMilliseconds < 1000,
+        // Body takes ~3 s; headers must arrive well before that. The wide gap
+        // keeps this robust under CI CPU contention (see SyncSendTests).
+        Assert.True(stopwatch.ElapsedMilliseconds < 1500,
             $"headers took {stopwatch.ElapsedMilliseconds} ms — body was buffered, not streamed");
 
         await using Stream stream = await response.Content.ReadAsStreamAsync();
