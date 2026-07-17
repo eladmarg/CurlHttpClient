@@ -40,9 +40,9 @@ jobs:
   publish:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
 
@@ -58,7 +58,7 @@ jobs:
           Start-Process -FilePath $vsInstaller -ArgumentList $args -Wait
 
       - name: Cache vcpkg binary artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: vcpkg-${{ env.VCPKG_BASELINE }}-${{ hashFiles('native/vcpkg.json') }}
@@ -106,7 +106,7 @@ jobs:
           dotnet pack src/CurlHttpClient.DependencyInjection/CurlHttpClient.DependencyInjection.csproj $packArgs
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: nuget-packages
           path: |

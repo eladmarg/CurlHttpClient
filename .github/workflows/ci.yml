@@ -20,7 +20,7 @@ jobs:
   build-native:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install MSVC v142 toolset (WS2012R2-compatible)
         shell: pwsh
@@ -33,7 +33,7 @@ jobs:
           Start-Process -FilePath $vsInstaller -ArgumentList $args -Wait
 
       - name: Cache vcpkg binary artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: vcpkg-${{ env.VCPKG_BASELINE }}-${{ hashFiles('native/vcpkg.json') }}
@@ -50,7 +50,7 @@ jobs:
         shell: pwsh
         run: build/check-imports.ps1 -DllPath native/CurlBridge/out/build/x64-windows-static-v142/curl_http_bridge.dll
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/curl_http_bridge.dll
@@ -62,16 +62,16 @@ jobs:
     needs: build-native
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
       - run: dotnet test tests/CurlHttpClient.Tests -c Release --logger "trx;LogFileName=unit.trx" --results-directory artifacts/test-results
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: unit-results
@@ -86,11 +86,11 @@ jobs:
     env:
       CURLHTTP_ENFORCE_COVERAGE: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
@@ -123,7 +123,7 @@ jobs:
               Write-Host "::error title=$name::$msg"
             }
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: integration-artifacts
@@ -141,11 +141,11 @@ jobs:
       CURLHTTP_STRESS_MB: "100"
       CURLHTTP_SOAK_SECONDS: "60"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
@@ -155,7 +155,7 @@ jobs:
         env:
           CURLHTTP_ENGINE: multi
         run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --filter "FullyQualifiedName~Stress" --results-directory artifacts/test-results
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: cipher-stress-artifacts
@@ -168,11 +168,11 @@ jobs:
     needs: build-native
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
@@ -182,7 +182,7 @@ jobs:
       - name: Consumer smoke test (offline)
         working-directory: consumer
         run: dotnet test --filter "Category!=RequiresInternet"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: nuget-packages
           path: artifacts/*.nupkg
@@ -193,6 +193,6 @@ jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: actionlint
         uses: raven-actions/actionlint@v2
