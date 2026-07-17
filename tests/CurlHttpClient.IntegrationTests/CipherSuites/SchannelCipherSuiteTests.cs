@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Authentication;
 using Xunit;
 
@@ -11,12 +12,45 @@ namespace CurlHttp.IntegrationTests.CipherSuites;
 /// CLIENT is pinned (via Tls12CipherList / Tls13CipherSuites) and the server
 /// reports which suite Schannel actually negotiated.
 ///
-/// Assumes a modern OS where these suites are enabled (the test environment
-/// contract for this repo).
+/// A suite the host OS's Schannel does not enable by default cannot be
+/// negotiated here (the SslStream server offers only the OS default set), so
+/// such a suite is SKIPPED with a reason rather than failed — e.g. Windows
+/// Server 2022 drops the legacy RSA-key-exchange and SHA-1 suites that
+/// desktop Windows still ships. The handler's ability to speak every suite is
+/// proven OS-independently by the OpenSSL-server matrix.
 /// </summary>
 [Collection("cipher-suites")]
 public class SchannelCipherSuiteTests(CipherMaterialFixture fixture)
 {
+    /// <summary>IANA names of the cipher suites the host OS Schannel has
+    /// enabled (via Get-TlsCipherSuite). Empty ⇒ probe unavailable ⇒ do not
+    /// skip (run as before), so a broken probe can never silently hide a real
+    /// failure.</summary>
+    private static readonly Lazy<IReadOnlySet<string>> OsEnabledSuites = new(ProbeOsEnabledSuites);
+
+    private static IReadOnlySet<string> ProbeOsEnabledSuites()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("powershell",
+                "-NoProfile -NonInteractive -Command \"Get-TlsCipherSuite | ForEach-Object Name\"")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using Process p = Process.Start(psi)!;
+            string output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(15_000);
+            return output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
     /// <summary>IANA name (== SslStream.NegotiatedCipherSuite.ToString()),
     /// OpenSSL client-pin name, TLS 1.3 flag, needs-ECDSA-cert flag.</summary>
     public static TheoryData<string, string, bool, bool> SupportedSuites => new()
@@ -48,11 +82,18 @@ public class SchannelCipherSuiteTests(CipherMaterialFixture fixture)
         { "TLS_RSA_WITH_AES_128_CBC_SHA", "AES128-SHA", false, false },
     };
 
-    [Theory]
+    [SkippableTheory]
     [MemberData(nameof(SupportedSuites))]
     public async Task PinnedClient_NegotiatesTheExactSuite_AgainstTheOsTlsStack(
         string ianaName, string opensslPin, bool tls13, bool needsEcdsaCert)
     {
+        // The SslStream server offers only the OS default suites; skip any the
+        // host does not enable (e.g. WS2022 drops RSA-kx / SHA-1) rather than
+        // failing a handshake that cannot succeed on this OS.
+        Skip.If(OsEnabledSuites.Value.Count > 0 && !OsEnabledSuites.Value.Contains(ianaName),
+            $"host OS Schannel does not enable {ianaName} by default; " +
+            "handler support for it is covered by the OpenSSL-server matrix.");
+
         using var server = new SslStreamCipherServer(
             needsEcdsaCert ? fixture.Material.EcdsaCertificate : fixture.Material.RsaCertificate,
             tls13 ? SslProtocols.Tls13 : SslProtocols.Tls12);
