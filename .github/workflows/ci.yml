@@ -106,6 +106,23 @@ jobs:
           CURLHTTP_ENGINE: multi
           CURLHTTP_ENFORCE_COVERAGE: "0"
         run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --logger "trx;LogFileName=integration-multi.trx" --results-directory artifacts/test-results --blame-crash --blame-hang-timeout 120s
+      - name: Annotate failing tests
+        if: failure()
+        shell: pwsh
+        run: |
+          # Surface each failed test as a ::error:: annotation so failures are
+          # visible on the run (and via the public check-runs annotations API)
+          # without downloading the trx.
+          Get-ChildItem artifacts/test-results/*.trx -ErrorAction SilentlyContinue | ForEach-Object {
+            [xml]$trx = Get-Content -Raw $_.FullName
+            foreach ($t in $trx.SelectNodes("//*[local-name()='UnitTestResult'][@outcome='Failed']")) {
+              $name = $t.GetAttribute('testName')
+              $node = $t.SelectSingleNode(".//*[local-name()='Message']")
+              $msg = if ($node) { ($node.InnerText -replace '\s+',' ').Trim() } else { 'failed' }
+              if ($msg.Length -gt 400) { $msg = $msg.Substring(0,400) }
+              Write-Host "::error title=$name::$msg"
+            }
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
