@@ -44,6 +44,25 @@ public static class HttpClientApiInventory
             signatures.Add(Format("HttpClientJsonExtensions", method));
         }
 
+        // Every public request-body content type the caller can hand to the
+        // handler. Enumerated from the two framework assemblies (System.Net.Http
+        // and System.Net.Http.Json) so a newly-shipped BCL content kind — or a
+        // dropped test — trips the gate. GetExportedTypes() yields public types
+        // only, so the internal JsonContent<T> is excluded while the public,
+        // caller-constructible (via JsonContent.Create) abstract JsonContent is
+        // included. A distinct "HttpContent:" prefix keeps these signatures out
+        // of the method-signature namespace.
+        foreach (Type type in new[]
+                 {
+                     typeof(HttpContent).Assembly,
+                     typeof(System.Net.Http.Json.JsonContent).Assembly,
+                 }
+                 .SelectMany(a => a.GetExportedTypes())
+                 .Where(t => t != typeof(HttpContent) && typeof(HttpContent).IsAssignableFrom(t)))
+        {
+            signatures.Add($"HttpContent:{type.Name}");
+        }
+
         return [.. signatures];
     }
 

@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using CurlHttp.IntegrationTests.ApiCoverage;
 using CurlHttp.IntegrationTests.Infrastructure;
 using Xunit;
 
@@ -48,6 +50,7 @@ public class RequestContentTests(ServerFixture fixture)
     }
 
     [Fact]
+    [ApiCoverage("HttpContent:StringContent")]
     public async Task StringContent_Utf8AndNonAscii_ArrivesByteExact()
     {
         const string text = "héllo wörld — עברית 你好 🚀";
@@ -62,6 +65,7 @@ public class RequestContentTests(ServerFixture fixture)
     }
 
     [Fact]
+    [ApiCoverage("HttpContent:ByteArrayContent")]
     public async Task ByteArrayContent_ArrivesByteExact()
     {
         byte[] payload = DeterministicPayload.Create(64 * 1024 + 17, seed: 21);
@@ -73,6 +77,38 @@ public class RequestContentTests(ServerFixture fixture)
     }
 
     [Fact]
+    [ApiCoverage("HttpContent:ReadOnlyMemoryContent")]
+    public async Task ReadOnlyMemoryContent_ArrivesByteExact()
+    {
+        byte[] payload = DeterministicPayload.Create(64 * 1024 + 9, seed: 23);
+        using JsonDocument result = await PostAndInspectAsync(
+            new ReadOnlyMemoryContent(payload.AsMemory()));
+        Assert.Equal(payload.Length, result.RootElement.GetProperty("bodyLength").GetInt64());
+        Assert.Equal(DeterministicPayload.Sha256(payload),
+            result.RootElement.GetProperty("bodySha256").GetString());
+        Assert.Equal(payload.Length,
+            result.RootElement.GetProperty("declaredContentLength").GetInt64());
+    }
+
+    [Fact]
+    [ApiCoverage("HttpContent:JsonContent")]
+    public async Task JsonContent_Created_SerializesWithJsonContentType()
+    {
+        // Compute the expected bytes through JsonContent itself (a fresh instance)
+        // so the assertion can't drift from JsonContent's own serializer options —
+        // the same round-trip pattern the FormUrlEncodedContent test uses.
+        var payload = new { hello = "world", n = 42 };
+        byte[] expected = await JsonContent.Create(payload).ReadAsByteArrayAsync();
+
+        using JsonDocument result = await PostAndInspectAsync(JsonContent.Create(payload));
+        Assert.StartsWith("application/json",
+            result.RootElement.GetProperty("contentType").GetString());
+        Assert.Equal(DeterministicPayload.Sha256(expected),
+            result.RootElement.GetProperty("bodySha256").GetString());
+    }
+
+    [Fact]
+    [ApiCoverage("HttpContent:FormUrlEncodedContent")]
     public async Task FormUrlEncodedContent_ArrivesWithCorrectTypeAndEncoding()
     {
         var form = new FormUrlEncodedContent(
@@ -89,6 +125,7 @@ public class RequestContentTests(ServerFixture fixture)
     }
 
     [Fact]
+    [ApiCoverage("HttpContent:MultipartFormDataContent")]
     public async Task MultipartFormDataContent_PartsAndBoundariesSurviveIntact()
     {
         byte[] filePayload = DeterministicPayload.Create(128 * 1024, seed: 31);
@@ -116,6 +153,7 @@ public class RequestContentTests(ServerFixture fixture)
     }
 
     [Fact]
+    [ApiCoverage("HttpContent:StreamContent")]
     public async Task StreamContent_KnownLength_UsesContentLengthFraming()
     {
         const int size = 512 * 1024;
