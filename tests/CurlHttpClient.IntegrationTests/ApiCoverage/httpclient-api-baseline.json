@@ -501,6 +501,46 @@
       "signature": "HttpClientJsonExtensions.PutAsJsonAsync<T>(HttpClient, Uri, T, JsonTypeInfo<T>, CancellationToken)",
       "category": "Direct",
       "note": ""
+    },
+    {
+      "signature": "HttpContent:ByteArrayContent",
+      "category": "Direct",
+      "note": "Request-body content type; sent through the handler and verified byte-for-byte via /inspect."
+    },
+    {
+      "signature": "HttpContent:FormUrlEncodedContent",
+      "category": "Direct",
+      "note": "Request-body content type; sent through the handler and verified byte-for-byte via /inspect."
+    },
+    {
+      "signature": "HttpContent:JsonContent",
+      "category": "Direct",
+      "note": "Request-body content type; JsonContent.Create(...) sent directly through the handler (not only transitively via PostAsJsonAsync)."
+    },
+    {
+      "signature": "HttpContent:MultipartContent",
+      "category": "CoveredVia",
+      "note": "Abstract base of the directly-tested MultipartFormDataContent; the multipart serializer path is identical below HttpClient."
+    },
+    {
+      "signature": "HttpContent:MultipartFormDataContent",
+      "category": "Direct",
+      "note": "Request-body content type; parts and boundaries verified via /inspect-form."
+    },
+    {
+      "signature": "HttpContent:ReadOnlyMemoryContent",
+      "category": "Direct",
+      "note": "Request-body content type; sent through the handler and verified byte-for-byte via /inspect."
+    },
+    {
+      "signature": "HttpContent:StreamContent",
+      "category": "Direct",
+      "note": "Request-body content type; known-length and chunked framing verified via /inspect."
+    },
+    {
+      "signature": "HttpContent:StringContent",
+      "category": "Direct",
+      "note": "Request-body content type; UTF-8/non-ASCII body verified byte-for-byte via /inspect."
     }
   ]
 }
