@@ -49,6 +49,24 @@ AI APIs, Google/Microsoft SDKs). Both were found by differential testing against
   `/echo-headers` collapses repeated lines via `StringValues.ToString()`, which
   is why the header defect above was invisible to the existing suite.
 
+### Dependencies
+
+- Managed packages moved to current: `Microsoft.Extensions.Logging.Abstractions`,
+  `Microsoft.Extensions.Http` and `Microsoft.Extensions.Options` 10.0.10 →
+  10.0.11; `Microsoft.NET.Test.Sdk` 18.8.1 → 18.9.0;
+  `xunit.runner.visualstudio` 3.1.5 → 4.0.0; `Xunit.SkippableFact` 1.5.61 →
+  1.5.85. The consumer smoke-test project also moves off `Microsoft.NET.Test.Sdk`
+  17.14.1.
+- The consumer smoke test now pins the package version `build\package.cmd`
+  actually produces. A stale pin resolved from nuget.org instead of
+  `..\artifacts`, which would have certified the *published* package rather
+  than the build under test.
+- **Native dependencies are unchanged** (curl 8.21.0, OpenSSL 3.6.3, nghttp2
+  1.69.0, zlib 1.3.2, brotli 1.2.0 — vcpkg baseline `cd61e1e` / 2026.06.24).
+  Bumping the vcpkg baseline rebuilds the statically linked TLS stack and needs
+  the full cipher matrix plus a real Server 2012 R2 smoke test, so it belongs in
+  its own change. See `docs/versions.md` for the CVE-cadence note.
+
 ### Documentation
 
 - `CertificateAuthorityBundlePath` no longer shows a **relative** example path.
