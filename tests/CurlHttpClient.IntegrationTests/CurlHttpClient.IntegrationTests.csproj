@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CurlHttpClient\CurlHttpClient.csproj" />
+    <ProjectReference Include="..\..\src\CurlHttpClient.DependencyInjection\CurlHttpClient.DependencyInjection.csproj" />
   </ItemGroup>
 
   <ItemGroup>

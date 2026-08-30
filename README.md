@@ -113,9 +113,19 @@ timeouts, redirects, decompression, and proxies.
 dotnet add package CurlHttpClient.DependencyInjection
 ```
 
+To put the transport under clients you already register — typed clients, Refit
+clients, SDK clients — chain `UseCurlHandler`:
+
 ```csharp
 using CurlHttp.DependencyInjection;
 
+builder.Services.AddHttpClient<IInvoiceApi, InvoiceApi>()
+    .UseCurlHandler(_ => new CurlHttpClientOptions { EnableHttp2 = true });
+```
+
+To register a new named client instead:
+
+```csharp
 builder.Services.AddCurlHttpClient("modern-tls", _ => new CurlHttpClientOptions
 {
     EnableHttp2 = true,

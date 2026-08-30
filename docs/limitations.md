@@ -84,7 +84,14 @@ is buffered on the calling thread).
     `request.Headers.ExpectContinue == true`).
 13. Non-seekable request bodies cannot be replayed if a server demands a
     rewind mid-transfer (libcurl gets `CURL_SEEKFUNC_CANTSEEK` and may fail
-    the transfer) — same constraint as SocketsHttpHandler.
+    the transfer) — same constraint as SocketsHttpHandler. The same applies
+    when a retry handler re-sends the request: seekable bodies (the buffered
+    content types — `StringContent`, `ByteArrayContent`, `JsonContent`,
+    `FormUrlEncodedContent`, `MultipartFormDataContent`) are rewound and
+    resent in full, while a one-shot stream fails the retry with an
+    `HttpRequestException` naming the rewind as the cause. An attempt that
+    failed before reading any of the body (DNS, connect, TLS) leaves it
+    replayable.
 14. `response.RequestMessage.RequestUri` is updated to the final redirect
     target; internally-tracked hop URIs come from Location-header resolution
     and are confirmed against `CURLINFO_EFFECTIVE_URL` at transfer end.

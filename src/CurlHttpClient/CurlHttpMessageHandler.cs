@@ -167,6 +167,11 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
         }
         finally
         {
+            // Whether or not the transfer succeeded, remember if the content was
+            // actually drained: HttpContent hands out one cached stream, so a
+            // retry of this same request needs to know the body is spent. An
+            // attempt that failed before reading any of it stays retryable.
+            context.MarkRequestBodyConsumed();
             if (!dispatched)
             {
                 // The worker never ran; reclaim what SendAsync allocated.
@@ -188,10 +193,15 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
             {
                 continue;
             }
-            foreach (string value in header.Value)
-            {
-                lines.Add(FormatHeaderLine(header.Key, value));
-            }
+            // One wire line per header NAME, never one per value: .NET stores
+            // some headers as several values that are NOT comma-separated on
+            // the wire (User-Agent "product (comment)" is space-separated,
+            // Cookie is "; "-separated). Emitting a line per value made the
+            // server rejoin them with "," and corrupted the header.
+            // HeaderStringValues.ToString() applies each header's own
+            // separator — the same one SocketsHttpHandler writes — so no
+            // hard-coded table of exceptional headers is needed.
+            lines.Add(FormatHeaderLine(header.Key, header.Value.ToString()));
         }
 
         if (request.Content is not null)
@@ -204,10 +214,9 @@ public sealed class CurlHttpMessageHandler : HttpMessageHandler
                 {
                     continue;
                 }
-                foreach (string value in header.Value)
-                {
-                    lines.Add(FormatHeaderLine(header.Key, value));
-                }
+                // Single line per name, with the header's own separator — see
+                // the request-header loop above.
+                lines.Add(FormatHeaderLine(header.Key, header.Value.ToString()));
             }
         }
 

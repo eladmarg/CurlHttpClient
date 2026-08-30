@@ -1,6 +1,6 @@
 {
   "$comment": "Committed HttpClient API-coverage baseline. Regenerate deliberately when global.json bumps the SDK. Categories: Direct (an [ApiCoverage]-tagged executable test invokes this exact API), CoveredVia (same implementation as a directly-tested overload), NotApplicable (justified).",
-  "sdk": "10.0.302",
+  "sdk": "10.0.303",
   "apis": [
     {
       "signature": "HttpClient.BaseAddress { get; set; }",

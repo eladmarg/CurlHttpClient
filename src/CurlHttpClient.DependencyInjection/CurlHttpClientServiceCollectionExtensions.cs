@@ -1,13 +1,14 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace CurlHttp.DependencyInjection;
 
 public static class CurlHttpClientServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers a named <see cref="HttpClient"/> whose primary handler is a
-    /// <see cref="CurlHttpMessageHandler"/> (libcurl + OpenSSL transport).
+    /// Registers a NEW named <see cref="HttpClient"/> whose primary handler is a
+    /// <see cref="CurlHttpMessageHandler"/> (libcurl + OpenSSL transport). To put
+    /// the transport under a client that already exists (a typed or Refit client),
+    /// use <see cref="CurlHttpClientBuilderExtensions.UseCurlHandler(IHttpClientBuilder, Func{IServiceProvider, CurlHttpClientOptions})"/>.
     ///
     /// The handler lifetime is set to infinite: the handler is designed to be
     /// long-lived (its native connection pools live inside it) and connection
@@ -31,12 +32,7 @@ public static class CurlHttpClientServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrEmpty(name);
 
-        return services.AddHttpClient(name)
-            .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
-                new CurlHttpMessageHandler(
-                    optionsFactory?.Invoke(serviceProvider) ?? new CurlHttpClientOptions(),
-                    serviceProvider.GetService<ILogger<CurlHttpMessageHandler>>()))
-            .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
+        return services.AddHttpClient(name).UseCurlHandler(optionsFactory);
     }
 
     /// <summary>Overload taking a fixed options instance.</summary>

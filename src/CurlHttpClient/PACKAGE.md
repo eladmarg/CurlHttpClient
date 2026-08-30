@@ -11,8 +11,11 @@ the bridge DLL is self-contained (static CRT) and ships in the package.
 ```csharp
 using var handler = new CurlHttpMessageHandler(new CurlHttpClientOptions
 {
-    // Optional: point at a CA bundle; a Mozilla cacert.pem ships in the package.
-    // CertificateAuthorityBundlePath = "runtimes/win-x64/native/cacert.pem",
+    // A Mozilla cacert.pem ships in the package and is found automatically,
+    // wherever the native bridge landed. Only set CertificateAuthorityBundlePath
+    // to use your OWN bundle — and give it an ABSOLUTE path: a relative one is
+    // resolved against the current directory, which is C:\Windows\System32 for
+    // an IIS worker process.
 });
 using var client = new HttpClient(handler);
 
@@ -49,14 +52,34 @@ of the OS.
 
 ## Dependency injection
 
+Requires a separate package:
+
+```
+dotnet add package CurlHttpClient.DependencyInjection
+```
+
+Put the transport under clients you already register — typed clients, Refit
+clients, SDK clients:
+
 ```csharp
-// CurlHttpClient.DependencyInjection — registers a named HttpClient.
+using CurlHttp.DependencyInjection;
+
+services.AddHttpClient<IInvoiceApi, InvoiceApi>()
+    .UseCurlHandler(_ => new CurlHttpClientOptions { EnableHttp2 = true });
+```
+
+Or register a new named client:
+
+```csharp
 services.AddCurlHttpClient("modern-tls", _ => new CurlHttpClientOptions
 {
     EnableHttp2 = true,
 });
 // httpClientFactory.CreateClient("modern-tls")
 ```
+
+Both set the factory handler lifetime to infinite, which is what this handler
+wants — see the package README for why.
 
 ## Platform & support notes
 

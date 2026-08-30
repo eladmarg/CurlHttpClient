@@ -275,6 +275,17 @@ public sealed class IntegrationTestServer : IAsyncDisposable
             return Results.Json(headers);
         });
 
+        // Preserves the evidence /echo-headers destroys: StringValues.ToString()
+        // comma-joins repeated header LINES, so "one line per value" and "one
+        // correctly-joined line" collapse to the same string there. Returning the
+        // raw array shows how many lines actually arrived on the wire.
+        app.Map("/echo-headers-raw", (HttpContext context) =>
+        {
+            var headers = context.Request.Headers.ToDictionary(
+                h => h.Key, h => h.Value.ToArray(), StringComparer.OrdinalIgnoreCase);
+            return Results.Json(headers);
+        });
+
         app.MapGet("/repeated-headers", (HttpContext context) =>
         {
             context.Response.Headers.Append("Set-Cookie", "first=1; Path=/");
