@@ -10,11 +10,14 @@
          as the packed NuGet package (from ..\..\artifacts via nuget.config),
          so these tests also validate that curl_http_bridge.dll and cacert.pem
          flow to the consumer output through the runtimes/ conventions. -->
-    <PackageReference Include="CurlHttpClient" Version="1.0.0" />
+    <!-- Must match the version build\package.cmd produces. A stale pin here
+         resolves from nuget.org instead of ..\artifacts, so the smoke test
+         would silently certify the PUBLISHED package rather than this build. -->
+    <PackageReference Include="CurlHttpClient" Version="1.1.0" />
 
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
   </ItemGroup>
 
 </Project>

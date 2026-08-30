@@ -123,8 +123,10 @@ internal static class NativeLibraryLoader
 
             throw new DllNotFoundException(
                 $"{fileName} was not found. Looked in: {string.Join("; ", candidates)}. " +
-                "Deploy the native bridge beside the application " +
-                @"(runtimes\win-x64\native\) or set CurlHttpClientOptions.NativeLibraryPath.");
+                @"Deploy the native bridge beside the application — either in runtimes\win-x64\native\ " +
+                "(RID-agnostic build) or in the application root (RID-specific publish, which flattens " +
+                "native assets) — or set CurlHttpClientOptions.NativeLibraryPath. PATH and the current " +
+                "directory are deliberately not searched.");
         }
     }
 }

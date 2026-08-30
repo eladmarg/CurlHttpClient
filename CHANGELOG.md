@@ -4,6 +4,84 @@ All notable changes to CurlHttpClient are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## 1.1.0
+
+Fixes for two defects found while adopting 1.0.0 in a production ASP.NET Core
+application carrying all external HTTPS (payment gateways, transactional email,
+AI APIs, Google/Microsoft SDKs). Both were found by differential testing against
+`SocketsHttpHandler` over a real TLS server.
+
+### Fixed
+
+- **A retried request sent an empty body.** The request body was read through
+  `HttpContent.ReadAsStreamAsync()`, which caches its stream, so any handler
+  above this one that re-sent the request (`AddStandardResilienceHandler`, the
+  Google.Apis backoff handler, the Microsoft.Graph retry middleware) got a
+  drained stream and transmitted 0 bytes against a correct `Content-Length` —
+  failing with libcurl error 26. Seekable bodies (the buffered content types:
+  `StringContent`, `ByteArrayContent`, `JsonContent`, `FormUrlEncodedContent`,
+  `MultipartFormDataContent`) are now rewound to the content's own origin and
+  resent in full on every attempt. A genuinely one-shot, non-seekable body still
+  cannot be replayed — correct — but now fails with an `HttpRequestException`
+  naming the rewind as the cause instead of a raw libcurl read error. An attempt
+  that failed before reading any of the body (DNS, connect, TLS) leaves it
+  replayable.
+- **Multi-valued request headers were corrupted.** Headers were written as one
+  wire line per stored value, so `UserAgent.ParseAdd("Product/1.0 (comment)")` —
+  which .NET stores as two values — arrived as two `User-Agent` lines and was
+  rejoined by the server as `Product/1.0,(comment)`. Each header is now written
+  as a single line using the separator .NET itself defines for it (`" "` for
+  `User-Agent`, `"; "` for `Cookie`, `", "` for genuine list headers), matching
+  `SocketsHttpHandler` byte-for-byte. Affects `User-Agent` (Have I Been Pwned
+  rate-limits callers without a valid one; the Google API client sends
+  `google-api-dotnet-client/<version> (gzip)`), `Cookie`, and multi-valued
+  content headers such as `Content-Language`.
+
+### Added
+
+- `UseCurlHandler(this IHttpClientBuilder, ...)` in
+  `CurlHttpClient.DependencyInjection` — attaches the transport to an
+  `HttpClient` that is already registered (a typed client, a Refit client, an
+  SDK's client), which is what most adopters need. `AddCurlHttpClient` continues
+  to register a new named client and is now implemented in terms of it. Both set
+  the factory handler lifetime to infinite.
+- Test-server endpoint `/echo-headers-raw` returning unjoined header lines.
+  `/echo-headers` collapses repeated lines via `StringValues.ToString()`, which
+  is why the header defect above was invisible to the existing suite.
+
+### Dependencies
+
+- Managed packages moved to current: `Microsoft.Extensions.Logging.Abstractions`,
+  `Microsoft.Extensions.Http` and `Microsoft.Extensions.Options` 10.0.10 →
+  10.0.11; `Microsoft.NET.Test.Sdk` 18.8.1 → 18.9.0;
+  `xunit.runner.visualstudio` 3.1.5 → 4.0.0; `Xunit.SkippableFact` 1.5.61 →
+  1.5.85. The consumer smoke-test project also moves off `Microsoft.NET.Test.Sdk`
+  17.14.1.
+- The consumer smoke test now pins the package version `build\package.cmd`
+  actually produces. A stale pin resolved from nuget.org instead of
+  `..\artifacts`, which would have certified the *published* package rather
+  than the build under test.
+- **Native dependencies are unchanged** (curl 8.21.0, OpenSSL 3.6.3, nghttp2
+  1.69.0, zlib 1.3.2, brotli 1.2.0 — vcpkg baseline `cd61e1e` / 2026.06.24).
+  Bumping the vcpkg baseline rebuilds the statically linked TLS stack and needs
+  the full cipher matrix plus a real Server 2012 R2 smoke test, so it belongs in
+  its own change. See `docs/versions.md` for the CVE-cadence note.
+
+### Documentation
+
+- `CertificateAuthorityBundlePath` no longer shows a **relative** example path.
+  The bundled `cacert.pem` is found automatically in either deployment layout;
+  a relative override resolves against the process working directory, which is
+  `C:\Windows\System32` for an IIS worker — so the documented snippet failed on
+  exactly the servers this package targets. Absolute paths are now called for.
+- `NativeLibraryPath` and the deployment docs now state that **both** layouts are
+  probed: `runtimes\win-x64\native\` (RID-agnostic build) and the application
+  root (RID-specific `dotnet publish -r win-x64`, which flattens native assets).
+  The resolver always supported both; only the documentation understated it.
+- The NuGet-facing README now states that the DI snippet needs the separate
+  `CurlHttpClient.DependencyInjection` package.
+- `docs/limitations.md` documents replay behaviour across a retry.
+
 ## 1.0.0 — initial public release
 
 First public release: a self-contained `HttpMessageHandler` that gives

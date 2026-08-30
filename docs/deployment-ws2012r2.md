@@ -23,6 +23,11 @@ explicit project decision. Consequences:
 
 ## What to deploy
 
+Either layout works — the loader probes both, and `cacert.pem` is resolved from
+wherever the bridge actually loaded.
+
+A RID-agnostic `dotnet build` / `dotnet publish`:
+
 ```
 <app>/
   YourApp.dll, ...                      (framework-dependent) or self-contained output
@@ -30,6 +35,17 @@ explicit project decision. Consequences:
   runtimes/win-x64/native/
     curl_http_bridge.dll
     cacert.pem
+```
+
+A RID-specific `dotnet publish -r win-x64` (the usual IIS deployment) flattens
+native assets into the application root and emits no `runtimes` directory:
+
+```
+<app>/
+  YourApp.dll, ...
+  CurlHttpClient.dll
+  curl_http_bridge.dll
+  cacert.pem
 ```
 
 - The process **must be x64**. The handler throws a clear

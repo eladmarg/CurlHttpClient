@@ -25,15 +25,25 @@ public enum CurlExecutionEngine
 public sealed class CurlHttpClientOptions
 {
     /// <summary>Explicit path (file or directory) of curl_http_bridge.dll.
-    /// When null the library is resolved from <c>runtimes\win-x64\native\</c>
-    /// beside the application. PATH and the current directory are never
-    /// searched. Process-wide: the first handler wins.</summary>
+    /// When null, BOTH deployment layouts are probed beside the application:
+    /// <c>runtimes\win-x64\native\</c> (a RID-agnostic <c>dotnet build</c>) and
+    /// the application root itself (a RID-specific
+    /// <c>dotnet publish -r win-x64</c>, which flattens native assets and emits
+    /// no <c>runtimes</c> directory — the usual IIS deployment). PATH and the
+    /// current directory are never searched, so an IIS worker's
+    /// <c>C:\Windows\System32</c> working directory cannot affect resolution.
+    /// A failure to resolve names every path tried.
+    /// Process-wide: the first handler wins.</summary>
     public string? NativeLibraryPath { get; init; }
 
     /// <summary>Path of a PEM CA bundle used for server certificate
     /// verification. When null, the bundled <c>cacert.pem</c> deployed next
-    /// to the native bridge is used; if that is also missing,
-    /// <see cref="UseSystemCertificateStore"/> must be enabled.</summary>
+    /// to the native bridge is used — found automatically in either layout,
+    /// since it is resolved from wherever the bridge actually loaded; if that
+    /// is also missing, <see cref="UseSystemCertificateStore"/> must be
+    /// enabled. Prefer an ABSOLUTE path when setting this: a relative one is
+    /// resolved against the current directory, which for an IIS worker process
+    /// is <c>C:\Windows\System32</c>.</summary>
     public string? CertificateAuthorityBundlePath { get; init; }
 
     /// <summary>Additionally trust the Windows certificate store (CAs are

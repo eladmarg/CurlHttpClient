@@ -36,6 +36,10 @@ internal sealed class CurlRequestContext : IDisposable
     private Stream? _requestBodyStream;
     private byte[]? _uploadBuffer;
     private long _requestBodyStartPosition;
+    // Bytes actually pulled from the content this attempt. Written only by the
+    // single thread libcurl drives the read callback on (or the upload pump),
+    // and read after that transfer has completed, so no interlock is needed.
+    private long _bodyBytesRead;
     private HttpResponseMessage? _response;
     private CancellationTokenRegistration _callerRegistration;
 
@@ -88,6 +92,27 @@ internal sealed class CurlRequestContext : IDisposable
     /// its length: <c>long.MinValue</c> none, -1 unknown/streamed, >= 0 known.</summary>
     public long ContentLength { get; private set; } = long.MinValue;
 
+    /// <summary>Marks a request whose one-shot content stream a previous
+    /// attempt already drained, so a later attempt can fail with a clear cause
+    /// instead of a bare libcurl read error. Set only once bytes really left
+    /// the content, so an attempt that failed before sending (DNS, connect)
+    /// stays retryable.</summary>
+    private static readonly HttpRequestOptionsKey<bool> BodyConsumedKey =
+        new("CurlHttpClient.RequestBodyConsumed");
+
+    /// <summary>True once this attempt pulled bytes out of the request content.</summary>
+    public bool RequestBodyWasConsumed => _bodyBytesRead > 0;
+
+    /// <summary>Records that the content is drained, so a retry of this same
+    /// request message fails with a rewind error rather than a short body.</summary>
+    public void MarkRequestBodyConsumed()
+    {
+        if (RequestBodyWasConsumed)
+        {
+            _request.Options.Set(BodyConsumedKey, true);
+        }
+    }
+
     /// <summary>Opens the request content stream on the SendAsync thread so
     /// stream faults surface as clean managed exceptions before any native
     /// work starts.</summary>
@@ -103,6 +128,11 @@ internal sealed class CurlRequestContext : IDisposable
             return;
         }
 
+        // HttpContent caches the stream this returns and hands back the SAME
+        // instance on every later call. A request sent more than once — exactly
+        // what a retry policy does (AddStandardResilienceHandler, the Google and
+        // Graph retry middleware) — would therefore find it drained and send 0
+        // bytes against a correct Content-Length. Rewind it per attempt.
         _requestBodyStream = await _request.Content.ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
         // Created before caller-cancel registration and dispatch, so no window
@@ -110,7 +140,28 @@ internal sealed class CurlRequestContext : IDisposable
         _bodyReadCts = new CancellationTokenSource();
         if (_requestBodyStream.CanSeek)
         {
-            _requestBodyStartPosition = _requestBodyStream.Position;
+            // Derive the origin instead of trusting the current position: the
+            // content occupies the TAIL of the stream (a StreamContent over a
+            // stream positioned at N declares Length - N bytes), and on a replay
+            // the position is wherever the previous attempt left it. Deriving
+            // makes every attempt start where the first one did.
+            long declared = _request.Content.Headers.ContentLength ?? -1;
+            _requestBodyStartPosition = declared >= 0 && _requestBodyStream.Length >= declared
+                ? _requestBodyStream.Length - declared
+                : 0;
+            _requestBodyStream.Position = _requestBodyStartPosition;
+        }
+        else if (_request.Options.TryGetValue(BodyConsumedKey, out _))
+        {
+            // One-shot body that a previous attempt already drained. Nothing can
+            // rewind it, so fail with a cause the caller can act on rather than
+            // letting libcurl report a bare "read function EOF fail" (code 26).
+            throw new HttpRequestException(
+                "The request content could not be rewound to be sent again: it is a " +
+                "one-shot, non-seekable stream that an earlier attempt already consumed " +
+                "(a retry or redirect handler above this one re-sent the request). Use " +
+                "buffered content — ByteArrayContent, StringContent, JsonContent — or call " +
+                "HttpContent.LoadIntoBufferAsync() before sending if the body must survive a retry.");
         }
 
         if (_request.Headers.TransferEncodingChunked == true)
@@ -259,6 +310,7 @@ internal sealed class CurlRequestContext : IDisposable
             while ((read = await stream.ReadAsync(
                 buffer, _bodyReadCts?.Token ?? CancellationToken.None).ConfigureAwait(false)) > 0)
             {
+                _bodyBytesRead += read;
                 // Blocks this pump task (not the loop thread) when the upload
                 // buffer is full — bounded memory. Returns false on abort.
                 if (!_uploadQueue!.Write(buffer.AsSpan(0, read)))
@@ -444,6 +496,7 @@ internal sealed class CurlRequestContext : IDisposable
                 ? readOp.Result
                 : readOp.AsTask().GetAwaiter().GetResult();
             _uploadBuffer.AsSpan(0, read).CopyTo(destination);
+            _bodyBytesRead += read;
             return read;
         }
         catch (OperationCanceledException)

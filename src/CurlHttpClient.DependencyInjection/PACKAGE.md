@@ -6,13 +6,23 @@
 bundled libcurl + OpenSSL native bridge (for hosts whose Schannel cannot, e.g.
 Windows Server 2012 R2). Windows x64.
 
+Put the curl transport under a client you ALREADY register — a typed client, a
+Refit client, or one an SDK registered for you. This is usually what you want:
+
 ```csharp
-// Registers a named HttpClient whose primary handler is the curl transport.
+using CurlHttp.DependencyInjection;
+
+services.AddHttpClient<IInvoiceApi, InvoiceApi>()
+    .UseCurlHandler(_ => new CurlHttpClientOptions { EnableHttp2 = true });
+```
+
+Or register a new named client:
+
+```csharp
 // Returns an IHttpClientBuilder, so you can chain the usual factory config.
 services.AddCurlHttpClient("modern-tls", _ => new CurlHttpClientOptions
 {
     EnableHttp2 = true,
-    // CertificateAuthorityBundlePath = ...,
 });
 
 // Resolve it via IHttpClientFactory:

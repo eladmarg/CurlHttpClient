@@ -8,7 +8,8 @@ they isolate managed-vs-native-vs-OS problems in seconds.
 
 | Message contains | Cause | Fix |
 | --- | --- | --- |
-| `curl_http_bridge.dll was not found` | native assets not deployed | ensure `runtimes\win-x64\native\curl_http_bridge.dll` beside the app, or set `NativeLibraryPath` |
+| `curl_http_bridge.dll was not found` | native assets not deployed | the message lists every path tried; put `curl_http_bridge.dll` beside the app — either in `runtimes\win-x64\native\` or in the app root (a RID-specific publish flattens it there) — or set `NativeLibraryPath` |
+| `CertificateAuthorityBundlePath does not exist` | a **relative** CA path resolved against the process working directory (`C:\Windows\System32` under IIS) | use an absolute path, or leave the option unset — the bundled `cacert.pem` is found automatically |
 | `architecture mismatch` / `built for x64` | 32-bit process | run the app as x64 (`<PlatformTarget>x64</PlatformTarget>`) |
 | `TLS backend is ... not OpenSSL` | wrong/rebuilt DLL, or a foreign libcurl loaded | verify DLL SHA-256 against the package manifest; check `NativeLibraryPath` |
 | `lacks the threaded resolver` | native rebuilt without AsynchDNS | rebuild with the pinned vcpkg manifest |

@@ -4,7 +4,7 @@
     <RootNamespace>CurlHttp.DependencyInjection</RootNamespace>
     <AssemblyName>CurlHttpClient.DependencyInjection</AssemblyName>
     <Description>IHttpClientFactory / dependency-injection integration for CurlHttpClient — AddCurlHttpClient(...) to register the libcurl+OpenSSL-backed HttpMessageHandler.</Description>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>eladmarg</Authors>
     <Company>eladmarg</Company>
     <Product>CurlHttpClient</Product>
@@ -31,8 +31,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.11" />
   </ItemGroup>
 
   <ItemGroup>
