@@ -4,6 +4,30 @@ All notable changes to CurlHttpClient are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- CI: the cipher/TLS matrices resolved the `openssl s_server` CLI from a single
+  hardcoded Git for Windows path. The `windows-2022` image shipped Git 2.56 on
+  2026-10-12 without the `mingw64\openssl.exe` copy, which turned the weekly
+  scheduled run red (~200 failures across the cipher and `Tls/` suites) with no
+  code change. Discovery now searches `CURLHTTP_OPENSSL_EXE`, `PATH`, Git
+  located from `git.exe`, and the standalone install locations, and reports
+  every probed path on failure. CI also resolves the CLI in a dedicated step so
+  a future image change fails once, early and obviously.
+
+### Dependencies
+
+- `Microsoft.Extensions.Logging.Abstractions`, `Microsoft.Extensions.Http` and
+  `Microsoft.Extensions.Options` 10.0.11 → 10.0.13; `Microsoft.NET.Test.Sdk`
+  18.9.0 → 18.11.0; `xunit.runner.visualstudio` 4.0.0 → 4.0.1.
+- GitHub Actions moved to current majors: `checkout` v5 → v7, `setup-dotnet`
+  v5 → v6, `cache` v5 → v6, `upload-artifact` v6 → v7, `download-artifact`
+  v7 → v8, `action-gh-release` v2 → v3 (Node 24 runtimes).
+- Native dependencies unchanged (curl 8.21.0, OpenSSL 3.6.3; vcpkg baseline
+  `cd61e1e`).
+
 ## 1.1.0
 
 Fixes for two defects found while adopting 1.0.0 in a production ASP.NET Core
