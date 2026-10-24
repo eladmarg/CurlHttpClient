@@ -40,9 +40,9 @@ jobs:
   publish:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -58,7 +58,7 @@ jobs:
           Start-Process -FilePath $vsInstaller -ArgumentList $args -Wait
 
       - name: Cache vcpkg binary artifacts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: vcpkg-${{ env.VCPKG_BASELINE }}-${{ hashFiles('native/vcpkg.json') }}
@@ -106,7 +106,7 @@ jobs:
           dotnet pack src/CurlHttpClient.DependencyInjection/CurlHttpClient.DependencyInjection.csproj $packArgs
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: |
@@ -144,7 +144,7 @@ jobs:
 
       - name: Create GitHub Release
         if: ${{ startsWith(github.ref, 'refs/tags/') && github.event.inputs.dry_run != 'true' }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: CurlHttpClient ${{ github.ref_name }}
           generate_release_notes: true

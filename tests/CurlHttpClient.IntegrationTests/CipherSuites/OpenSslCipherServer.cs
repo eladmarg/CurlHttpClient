@@ -29,24 +29,110 @@ internal sealed class OpenSslCipherServer : IDisposable
         BaseUri = new Uri($"https://127.0.0.1:{port}/");
     }
 
-    /// <summary>Resolved path of openssl.exe, or null when unavailable
-    /// (used by the conditional test attributes to skip).</summary>
+    /// <summary>Resolved path of openssl.exe, or null when none was found.
+    /// The cipher/TLS matrices require it and fail loudly when it is missing
+    /// (see OpenSslTheoryAttribute) — a missing CLI is a broken environment,
+    /// not a reason to silently drop coverage.</summary>
     public static string? OpenSslExecutable { get; } = Locate();
 
+    /// <summary>Every location probed, in order — reported in the failure
+    /// message so a future environment change is diagnosable from the log
+    /// alone.</summary>
+    internal static IReadOnlyList<string> ProbedLocations => Candidates();
+
     private static string? Locate()
+        => Candidates().FirstOrDefault(File.Exists);
+
+    private static List<string> Candidates()
     {
-        string? configured = Environment.GetEnvironmentVariable("CURLHTTP_OPENSSL_EXE");
-        if (configured is not null && File.Exists(configured))
+        var candidates = new List<string>();
+
+        void Add(string? path)
         {
-            return configured;
+            if (!string.IsNullOrWhiteSpace(path)
+                && !candidates.Contains(path, StringComparer.OrdinalIgnoreCase))
+            {
+                candidates.Add(path);
+            }
         }
-        // Git for Windows ships a full OpenSSL CLI.
-        string gitOpenSsl = @"C:\Program Files\Git\mingw64\bin\openssl.exe";
-        if (File.Exists(gitOpenSsl))
+
+        // 1. Explicit override always wins.
+        Add(Environment.GetEnvironmentVariable("CURLHTTP_OPENSSL_EXE"));
+
+        // 2. Anything on PATH — how a standalone OpenSSL install, a chocolatey
+        //    shim, or a hosted CI image normally exposes the CLI.
+        foreach (string dir in PathDirectories())
         {
-            return gitOpenSsl;
+            Add(SafeCombine(dir, "openssl.exe"));
         }
-        return null;
+
+        // 3. Git for Windows, located from git.exe rather than assumed: it
+        //    ships the CLI under usr\bin and (older builds) mingw64\bin. Git
+        //    2.56 on the GitHub windows-2022 image no longer carries the
+        //    mingw64 copy, which is exactly what broke the hardcoded path.
+        foreach (string gitRoot in GitInstallRoots())
+        {
+            Add(SafeCombine(gitRoot, "usr", "bin", "openssl.exe"));
+            Add(SafeCombine(gitRoot, "mingw64", "bin", "openssl.exe"));
+        }
+
+        // 4. Standalone installers and package managers.
+        foreach (string dir in new[]
+                 {
+                     @"C:\Program Files\OpenSSL\bin",
+                     @"C:\Program Files\OpenSSL-Win64\bin",
+                     @"C:\Program Files\FireDaemon OpenSSL 3\bin",
+                     @"C:\ProgramData\chocolatey\bin",
+                     @"C:\Strawberry\c\bin",
+                 })
+        {
+            Add(SafeCombine(dir, "openssl.exe"));
+        }
+
+        return candidates;
+    }
+
+    /// <summary>Git install roots: wherever git.exe actually is (its parent's
+    /// parent, since git ships in bin\ or cmd\), plus the standard paths.</summary>
+    private static List<string> GitInstallRoots()
+    {
+        var roots = new List<string>();
+        foreach (string dir in PathDirectories())
+        {
+            string? gitExe = SafeCombine(dir, "git.exe");
+            if (gitExe is not null && File.Exists(gitExe)
+                && Path.GetDirectoryName(Path.GetDirectoryName(gitExe)) is { } root)
+            {
+                roots.Add(root);
+            }
+        }
+        foreach (string variable in new[] { "ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA" })
+        {
+            if (Environment.GetEnvironmentVariable(variable) is { Length: > 0 } baseDir)
+            {
+                roots.Add(Path.Combine(baseDir, "Git"));
+                roots.Add(Path.Combine(baseDir, "Programs", "Git"));
+            }
+        }
+        return roots;
+    }
+
+    private static IEnumerable<string> PathDirectories()
+        => (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>PATH entries can contain characters that are illegal in a
+    /// path; such an entry must be skipped, not throw.</summary>
+    private static string? SafeCombine(string directory, params string[] parts)
+    {
+        try
+        {
+            return Path.Combine([directory, .. parts]);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
     }
 
     public static OpenSslCipherServer Start(
@@ -106,7 +192,10 @@ internal sealed class OpenSslCipherServer : IDisposable
     {
         string exe = OpenSslExecutable
             ?? throw new InvalidOperationException(
-                "openssl.exe not found; set CURLHTTP_OPENSSL_EXE or install Git for Windows.");
+                "openssl.exe not found, so the cipher/TLS matrix cannot run. Install an " +
+                "OpenSSL CLI (Git for Windows ships one under usr\\bin) or point " +
+                "CURLHTTP_OPENSSL_EXE at one. Probed, in order:" +
+                string.Concat(ProbedLocations.Select(p => Environment.NewLine + "  " + p)));
 
         int port = GetFreePort();
         var startInfo = new ProcessStartInfo

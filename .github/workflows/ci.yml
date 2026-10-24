@@ -20,7 +20,7 @@ jobs:
   build-native:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install MSVC v142 toolset (WS2012R2-compatible)
         shell: pwsh
@@ -33,7 +33,7 @@ jobs:
           Start-Process -FilePath $vsInstaller -ArgumentList $args -Wait
 
       - name: Cache vcpkg binary artifacts
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: vcpkg-${{ env.VCPKG_BASELINE }}-${{ hashFiles('native/vcpkg.json') }}
@@ -50,7 +50,7 @@ jobs:
         shell: pwsh
         run: build/check-imports.ps1 -DllPath native/CurlBridge/out/build/x64-windows-static-v142/curl_http_bridge.dll
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/curl_http_bridge.dll
@@ -62,16 +62,16 @@ jobs:
     needs: build-native
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
       - run: dotnet test tests/CurlHttpClient.Tests -c Release --logger "trx;LogFileName=unit.trx" --results-directory artifacts/test-results
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: unit-results
@@ -86,14 +86,42 @@ jobs:
     env:
       CURLHTTP_ENFORCE_COVERAGE: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
+      - name: Resolve the OpenSSL CLI (cipher/TLS matrix prerequisite)
+        shell: pwsh
+        run: |
+          # The cipher and TLS matrices drive a real `openssl s_server`, so the
+          # CLI is a hard prerequisite. Resolving it in a named step - rather
+          # than leaving it to the test's own probe - turns a runner-image
+          # change into ONE obvious failure here instead of ~200 identical
+          # test failures. Image 20261012.333.1 dropped Git's mingw64 copy of
+          # openssl.exe, which is exactly how this broke.
+          $candidates = @(
+            (Get-Command openssl.exe -ErrorAction SilentlyContinue).Source,
+            "$env:ProgramFiles\Git\usr\bin\openssl.exe",
+            "$env:ProgramFiles\Git\mingw64\bin\openssl.exe",
+            "$env:ProgramFiles\OpenSSL\bin\openssl.exe",
+            "$env:ProgramFiles\OpenSSL-Win64\bin\openssl.exe",
+            "C:\Program Files\FireDaemon OpenSSL 3\bin\openssl.exe",
+            "C:\ProgramData\chocolatey\bin\openssl.exe",
+            "C:\Strawberry\c\bin\openssl.exe"
+          ) | Where-Object { $_ }
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "::error title=OpenSSL CLI missing::The cipher/TLS matrix cannot run. Probed: $($candidates -join '; ')"
+            exit 1
+          }
+          Write-Host "Using $exe"
+          & $exe version
+          "CURLHTTP_OPENSSL_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Integration + TLS + fast cipher suites (worker engine)
         # --blame-crash/-hang: on a host crash or hang the runner writes a
         # Sequence.xml (naming the culprit test) + a dump under artifacts, so a
@@ -123,7 +151,7 @@ jobs:
               Write-Host "::error title=$name::$msg"
             }
           }
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: integration-artifacts
@@ -141,21 +169,49 @@ jobs:
       CURLHTTP_STRESS_MB: "100"
       CURLHTTP_SOAK_SECONDS: "60"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
+      - name: Resolve the OpenSSL CLI (cipher/TLS matrix prerequisite)
+        shell: pwsh
+        run: |
+          # The cipher and TLS matrices drive a real `openssl s_server`, so the
+          # CLI is a hard prerequisite. Resolving it in a named step - rather
+          # than leaving it to the test's own probe - turns a runner-image
+          # change into ONE obvious failure here instead of ~200 identical
+          # test failures. Image 20261012.333.1 dropped Git's mingw64 copy of
+          # openssl.exe, which is exactly how this broke.
+          $candidates = @(
+            (Get-Command openssl.exe -ErrorAction SilentlyContinue).Source,
+            "$env:ProgramFiles\Git\usr\bin\openssl.exe",
+            "$env:ProgramFiles\Git\mingw64\bin\openssl.exe",
+            "$env:ProgramFiles\OpenSSL\bin\openssl.exe",
+            "$env:ProgramFiles\OpenSSL-Win64\bin\openssl.exe",
+            "C:\Program Files\FireDaemon OpenSSL 3\bin\openssl.exe",
+            "C:\ProgramData\chocolatey\bin\openssl.exe",
+            "C:\Strawberry\c\bin\openssl.exe"
+          ) | Where-Object { $_ }
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "::error title=OpenSSL CLI missing::The cipher/TLS matrix cannot run. Probed: $($candidates -join '; ')"
+            exit 1
+          }
+          Write-Host "Using $exe"
+          & $exe version
+          "CURLHTTP_OPENSSL_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Full cipher matrix + stress (worker engine)
         run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --filter "FullyQualifiedName~Stress|FullyQualifiedName~CipherMatrixOrchestrator" --results-directory artifacts/test-results
       - name: Stress + bounded-memory against the event-loop engine
         env:
           CURLHTTP_ENGINE: multi
         run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --filter "FullyQualifiedName~Stress" --results-directory artifacts/test-results
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: cipher-stress-artifacts
@@ -168,11 +224,11 @@ jobs:
     needs: build-native
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
@@ -182,7 +238,7 @@ jobs:
       - name: Consumer smoke test (offline)
         working-directory: consumer
         run: dotnet test --filter "Category!=RequiresInternet"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: artifacts/*.nupkg
@@ -193,6 +249,6 @@ jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: actionlint
         uses: raven-actions/actionlint@v2
