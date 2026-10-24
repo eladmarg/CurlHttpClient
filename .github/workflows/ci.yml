@@ -94,6 +94,34 @@ jobs:
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
+      - name: Resolve the OpenSSL CLI (cipher/TLS matrix prerequisite)
+        shell: pwsh
+        run: |
+          # The cipher and TLS matrices drive a real `openssl s_server`, so the
+          # CLI is a hard prerequisite. Resolving it in a named step - rather
+          # than leaving it to the test's own probe - turns a runner-image
+          # change into ONE obvious failure here instead of ~200 identical
+          # test failures. Image 20261012.333.1 dropped Git's mingw64 copy of
+          # openssl.exe, which is exactly how this broke.
+          $candidates = @(
+            (Get-Command openssl.exe -ErrorAction SilentlyContinue).Source,
+            "$env:ProgramFiles\Git\usr\bin\openssl.exe",
+            "$env:ProgramFiles\Git\mingw64\bin\openssl.exe",
+            "$env:ProgramFiles\OpenSSL\bin\openssl.exe",
+            "$env:ProgramFiles\OpenSSL-Win64\bin\openssl.exe",
+            "C:\Program Files\FireDaemon OpenSSL 3\bin\openssl.exe",
+            "C:\ProgramData\chocolatey\bin\openssl.exe",
+            "C:\Strawberry\c\bin\openssl.exe"
+          ) | Where-Object { $_ }
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "::error title=OpenSSL CLI missing::The cipher/TLS matrix cannot run. Probed: $($candidates -join '; ')"
+            exit 1
+          }
+          Write-Host "Using $exe"
+          & $exe version
+          "CURLHTTP_OPENSSL_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Integration + TLS + fast cipher suites (worker engine)
         # --blame-crash/-hang: on a host crash or hang the runner writes a
         # Sequence.xml (naming the culprit test) + a dump under artifacts, so a
@@ -149,6 +177,34 @@ jobs:
         with:
           name: native-bridge
           path: native/CurlBridge/out/build/x64-windows-static-v142/
+      - name: Resolve the OpenSSL CLI (cipher/TLS matrix prerequisite)
+        shell: pwsh
+        run: |
+          # The cipher and TLS matrices drive a real `openssl s_server`, so the
+          # CLI is a hard prerequisite. Resolving it in a named step - rather
+          # than leaving it to the test's own probe - turns a runner-image
+          # change into ONE obvious failure here instead of ~200 identical
+          # test failures. Image 20261012.333.1 dropped Git's mingw64 copy of
+          # openssl.exe, which is exactly how this broke.
+          $candidates = @(
+            (Get-Command openssl.exe -ErrorAction SilentlyContinue).Source,
+            "$env:ProgramFiles\Git\usr\bin\openssl.exe",
+            "$env:ProgramFiles\Git\mingw64\bin\openssl.exe",
+            "$env:ProgramFiles\OpenSSL\bin\openssl.exe",
+            "$env:ProgramFiles\OpenSSL-Win64\bin\openssl.exe",
+            "C:\Program Files\FireDaemon OpenSSL 3\bin\openssl.exe",
+            "C:\ProgramData\chocolatey\bin\openssl.exe",
+            "C:\Strawberry\c\bin\openssl.exe"
+          ) | Where-Object { $_ }
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            Write-Host "::error title=OpenSSL CLI missing::The cipher/TLS matrix cannot run. Probed: $($candidates -join '; ')"
+            exit 1
+          }
+          Write-Host "Using $exe"
+          & $exe version
+          "CURLHTTP_OPENSSL_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Full cipher matrix + stress (worker engine)
         run: dotnet test tests/CurlHttpClient.IntegrationTests -c Release --filter "FullyQualifiedName~Stress|FullyQualifiedName~CipherMatrixOrchestrator" --results-directory artifacts/test-results
       - name: Stress + bounded-memory against the event-loop engine
